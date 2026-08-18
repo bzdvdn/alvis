@@ -78,7 +78,8 @@ def test_pgvector_upsert_constructs_idempotent_insert() -> None:
 
     asyncio.run(run())
 
-    assert conn.statements[0].startswith("CREATE TABLE IF NOT EXISTS")
+    assert conn.statements[0].startswith("CREATE EXTENSION IF NOT EXISTS vector")
+    assert conn.statements[1].startswith("CREATE TABLE IF NOT EXISTS")
     assert "ON CONFLICT (id)" in conn.statements[-1]
     assert conn.params[-1] == (
         str(point_id(chunk.source_uri, chunk.text)),

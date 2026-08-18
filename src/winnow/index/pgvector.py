@@ -79,6 +79,11 @@ class PgVectorIndex:
                 f"but a {dimensions}-dimensional vector arrived"
             )
         create = _psql().SQL(
+            "CREATE EXTENSION IF NOT EXISTS vector"
+        )
+        async with await self._connect() as connection:
+            await connection.execute(create)
+        create = _psql().SQL(
             "CREATE TABLE IF NOT EXISTS {} ("
             "id text PRIMARY KEY, "
             "source_uri text NOT NULL, "
