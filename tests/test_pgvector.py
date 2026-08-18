@@ -1,0 +1,126 @@
+"""PgVectorIndex behaviour (SQL generation & config validation).
+
+A live PostgreSQL/pgvector server is not required: ``connect`` is swapped for
+a recording fake, and the emitted SQL/parameters are asserted.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+
+from winnow.core.ids import point_id
+from winnow.core.models import Chunk
+from winnow.index import PgVectorIndex
+
+
+class _Conn:
+    """Fake psycopg async connection that records executed statements."""
+
+    def __init__(self, index: PgVectorIndex) -> None:
+        self._index = index
+        self.statements: list[str] = []
+        self.params: list[tuple[Any, ...]] = []
+
+    async def __aenter__(self) -> _Conn:
+        return self
+
+    async def __aexit__(self, *exc: Any) -> None:
+        return None
+
+    async def compose(self, sql: Any) -> str:
+        return sql.as_string(None)
+
+    async def execute(self, sql: Any, params: tuple[Any, ...] | None = None) -> None:
+        self.statements.append(sql.as_string(None))
+        self.params.append(params or ())
+
+
+def _swap(index: PgVectorIndex, conn: _Conn) -> None:
+    async def connect() -> _Conn:
+        return conn
+
+    index._connect = connect  # type: ignore[method-assign]
+
+
+def test_pgvector_rejects_missing_dsn() -> None:
+    with pytest.raises(ValueError, match="dsn"):
+        PgVectorIndex()
+
+
+def test_pgvector_rejects_missing_env() -> None:
+    with pytest.raises(ValueError, match="environment variable"):
+        PgVectorIndex(dsn_env="DEFINITELY_NOT_SET_VAR_123")
+
+
+def test_pgvector_dsn_env_wins(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TEST_WINNOW_DSN", "postgresql://u@h/db")
+    assert PgVectorIndex(dsn_env="TEST_WINNOW_DSN").dsn == "postgresql://u@h/db"
+
+
+def test_pgvector_rejects_both_dsn_and_env() -> None:
+    with pytest.raises(ValueError, match="either dsn or dsn_env"):
+        PgVectorIndex(dsn="x", dsn_env="TEST_WINNOW_DSN")
+
+
+def test_pgvector_upsert_constructs_idempotent_insert() -> None:
+    index = PgVectorIndex(dsn="postgresql://u@h/db")
+    conn = _Conn(index)
+    _swap(index, conn)
+
+    chunk = Chunk(text="hello", source_uri="s3://a", metadata={"heading": "H"})
+
+    async def run() -> None:
+        await index.upsert(chunk, [0.1, 0.2], source_id="s3", artifact_hash="abc")
+
+    import asyncio
+
+    asyncio.run(run())
+
+    assert conn.statements[0].startswith("CREATE TABLE IF NOT EXISTS")
+    assert "ON CONFLICT (id)" in conn.statements[-1]
+    assert conn.params[-1] == (
+        str(point_id(chunk.source_uri, chunk.text)),
+        chunk.source_uri,
+        chunk.text,
+        "s3",
+        "abc",
+        "[0.1,0.2]",
+        '{"heading": "H"}',
+    )
+
+
+def test_pgvector_reconcile_prunes_stale_hashes() -> None:
+    index = PgVectorIndex(dsn="postgresql://u@h/db")
+    conn = _Conn(index)
+    _swap(index, conn)
+
+    async def run() -> None:
+        await index.reconcile(
+            "s3",
+            {"s3://a": "h1", "s3://b": "h2"},
+        )
+
+    import asyncio
+
+    asyncio.run(run())
+
+    assert "unnest" in conn.statements[0]
+    assert conn.params[0] == ("s3", ["s3://a", "s3://b"], ["h1", "h2"])
+
+
+def test_pgvector_reconcile_empty_source_clears_all() -> None:
+    index = PgVectorIndex(dsn="postgresql://u@h/db")
+    conn = _Conn(index)
+    _swap(index, conn)
+
+    async def run() -> None:
+        await index.reconcile("s3", {})
+
+    import asyncio
+
+    asyncio.run(run())
+
+    assert "DELETE" in conn.statements[0]
+    assert conn.params[0] == ("s3",)

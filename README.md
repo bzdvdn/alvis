@@ -124,6 +124,20 @@ Chunks are embedded in batches (`batch_size`) through the same
 retry/backoff machinery as sources, and the Qdrant collection is created
 with whatever dimensionality the model returns.
 
+### Chunk strategies
+
+- `auto` — paragraph-aware token-budget splitting with overlap (default).
+- `sections` — one chunk per section heading; oversized sections are split
+  on the budget with the heading repeated as context on continuations.
+
+### Indexes
+
+- `qdrant` — Qdrant vector store (`url`, `collection`).
+- `pgvector` — PostgreSQL + pgvector column
+  (`dsn` / `dsn_env`, `table`, requires `pip install winnow[pgindex]`).
+  See `examples/pgvector.yaml` and the `postgres` service in docker-compose.
+- `memory` — in-memory store for tests and prototypes.
+
 ## Embedding in your application
 
 The pipeline is just an async API, so it slots into workers, schedulers, or

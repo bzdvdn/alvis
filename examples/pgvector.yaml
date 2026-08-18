@@ -1,0 +1,26 @@
+# Index into PostgreSQL + pgvector (heading-anchored chunking).
+# Requires:  docker compose up -d postgres  and  pip install winnow[pgindex]
+#   winnow run examples/pgvector.yaml
+pipeline:
+  source:
+    type: fs
+    config:
+      path: examples/docs
+
+  extract:
+    strategy: auto
+
+  chunk:
+    strategy: sections
+    config:
+      max_tokens: 200
+      overlap: 20
+
+  embed:
+    type: default
+
+  index:
+    type: pgvector
+    config:
+      dsn: postgresql://winnow:winnow@localhost:5433/winnow
+      table: winnow_chunks

@@ -58,6 +58,24 @@ def test_defaults_are_omitted_from_config() -> None:
     assert ch.overlap == 50
 
 
+def test_sections_chunk_strategy_roundtrips() -> None:
+    cfg = dsl.pipeline(
+        dsl.fs("."),
+        chunk=dsl.chunk(strategy="sections", max_tokens=120),
+        index=dsl.memory(),
+    )
+    assert cfg.chunk.strategy == "sections"
+    assert cfg.chunk.max_tokens == 120
+
+
+def test_pgvector_dsl_populates_config() -> None:
+    cfg = dsl.pgvector(dsn="postgresql://winnow@localhost/winnow", table="chunks")
+    assert cfg.type == "pgvector"
+    assert cfg.config["dsn"] == "postgresql://winnow@localhost/winnow"
+    assert cfg.config["table"] == "chunks"
+    assert "dsn_env" not in cfg.config
+
+
 async def test_dsl_pipeline_runs(tmp_path: Path) -> None:
     docs = tmp_path / "docs"
     docs.mkdir()

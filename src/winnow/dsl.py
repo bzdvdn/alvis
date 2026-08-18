@@ -163,10 +163,19 @@ def s3(
     )
 
 
-def chunk(max_tokens: int = 500, overlap: int = 50) -> ChunkConfig:
-    """Auto chunking by approximate token size with overlap."""
+def chunk(
+    strategy: str = "auto",
+    max_tokens: int = 500,
+    overlap: int = 50,
+) -> ChunkConfig:
+    """Auto chunking.
+
+    ``strategy="auto"`` splits sections by token budget with overlap;
+    ``strategy="sections"`` produces one chunk per heading, repeating the
+    heading as context on oversized-section continuations.
+    """
     return ChunkConfig(
-        strategy="auto",
+        strategy=strategy,
         config={
             **({"max_tokens": max_tokens} if max_tokens != 500 else {}),
             **({"overlap": overlap} if overlap != 50 else {}),
@@ -237,6 +246,27 @@ def qdrant(
 def memory() -> IndexConfig:
     """In-memory index (tests, small prototypes)."""
     return IndexConfig(type="memory")
+
+
+def pgvector(
+    dsn: str | None = None,
+    dsn_env: str | None = None,
+    table: str = "winnow_chunks",
+) -> IndexConfig:
+    """Store vectors in a pgvector column (requires ``winnow[pgindex]``).
+
+    ``dsn`` is a psycopg connection string (``postgresql://user@host/db``);
+    ``dsn_env`` names an environment variable holding it instead. The table
+    is created on demand with a ``vector(N)`` column matching the model.
+    """
+    return IndexConfig(
+        type="pgvector",
+        config={
+            **({"dsn": dsn} if dsn else {}),
+            **({"dsn_env": dsn_env} if dsn_env else {}),
+            **({"table": table} if table != "winnow_chunks" else {}),
+        },
+    )
 
 
 def pipeline(

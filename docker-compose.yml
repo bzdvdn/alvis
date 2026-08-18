@@ -45,6 +45,23 @@ services:
     volumes:
       - ./examples/s3-seed:/seed:ro
 
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: winnow
+      POSTGRES_PASSWORD: winnow
+      POSTGRES_DB: winnow
+    ports:
+      - "5433:5432"
+    volumes:
+      - pg_storage:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U winnow -d winnow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   qdrant_storage:
   minio_storage:
+  pg_storage:

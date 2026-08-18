@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from winnow.chunk import AutoChunker
+from winnow.chunk import AutoChunker, SectionsChunker
 from winnow.config.loader import ConfigError
 from winnow.config.models import (
     ChunkConfig,
@@ -13,7 +13,7 @@ from winnow.config.models import (
 )
 from winnow.embed import ApiEmbedder, HashEmbedder
 from winnow.extract import AutoExtractor
-from winnow.index import MemoryIndex, QdrantIndex
+from winnow.index import MemoryIndex, PgVectorIndex, QdrantIndex
 from winnow.registry import KNOWN_SOURCES
 from winnow.sources import (
     ConfluenceSource,
@@ -68,9 +68,11 @@ def build_extractor(config: ExtractConfig) -> AutoExtractor:
     raise ConfigError(f"extract strategy {config.strategy!r} is not implemented")
 
 
-def build_chunker(config: ChunkConfig) -> AutoChunker:
+def build_chunker(config: ChunkConfig) -> AutoChunker | SectionsChunker:
     if config.strategy == "auto":
         return AutoChunker(max_tokens=config.max_tokens, overlap=config.overlap)
+    if config.strategy == "sections":
+        return SectionsChunker(max_tokens=config.max_tokens, overlap=config.overlap)
     raise ConfigError(f"chunk strategy {config.strategy!r} is not implemented")
 
 
@@ -82,9 +84,11 @@ def build_embedder(config: EmbedConfig) -> HashEmbedder | ApiEmbedder:
     raise ConfigError(f"embed type {config.type!r} is not implemented")
 
 
-def build_indexer(config: IndexConfig) -> MemoryIndex | QdrantIndex:
+def build_indexer(config: IndexConfig) -> MemoryIndex | QdrantIndex | PgVectorIndex:
     if config.type == "memory":
         return MemoryIndex()
     if config.type == "qdrant":
         return QdrantIndex(**config.config)
+    if config.type == "pgvector":
+        return PgVectorIndex(**config.config)
     raise ConfigError(f"index type {config.type!r} is not implemented in v0.1")
