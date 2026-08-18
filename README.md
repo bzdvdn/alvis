@@ -8,15 +8,16 @@ Source → Artifact → Extraction → Canonical Content Tree → Chunking → E
 
 ## Status
 
-Alpha (v0.1.0). Skeleton only — CLI surface, config model, stage contracts.
+Alpha (v0.1.0). Core pipeline runs end-to-end: fs/Confluence sources → extract → chunk → embed → memory/Qdrant index. Async-native (httpx). The embedder (`default`) is a deterministic placeholder for v0.1; real models land in v1.0.
 
 ## Quick start
 
 ```bash
 pip install -e .
 winnow --version
-winnow init
-winnow validate examples/pipeline.yaml
+winnow init                # scaffold winnow.yaml
+winnow validate winnow.yaml
+winnow run examples/hello-pipeline.yaml   # zero-dependency hello world
 ```
 
 ## Documentation

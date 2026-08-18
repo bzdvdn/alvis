@@ -12,14 +12,14 @@ Goal: a runnable skeleton with a real hello-world path (Confluence → Qdrant) d
 
 - [x] Project skeleton: `src/` layout, `pyproject.toml`, entry point
 - [x] Repo bootstrap: git, `.gitignore`, LICENSE (Apache 2.0)
-- [ ] CLI surface: `winnow init`, `winnow run`, `winnow validate`
-- [ ] YAML schema + validation for the pipeline config
-- [ ] Config loader (<1> `pipeline:` grammar per constitution example)
-- [ ] Canonical Content Tree core model (v0, provisional)
-- [ ] Placeholder stage interfaces: extract / chunk / embed / index
-- [ ] Confluence source adapter (minimal, read-only)
-- [ ] Qdrant index adapter (minimal, upsert)
-- [ ] Hello-world example in `examples/` + smoke test
+- [x] CLI surface: `winnow init`, `winnow run`, `winnow validate`
+- [x] YAML schema + validation for the pipeline config (pydantic)
+- [x] Config loader (`pipeline:` grammar per constitution example)
+- [x] Canonical Content Tree core model (v0, provisional; pydantic)
+- [x] Stage interfaces: extract / chunk / embed / index (async protocols)
+- [ ] Confluence source adapter (minimal, read-only) — implemented, needs live test
+- [ ] Qdrant index adapter (minimal, upsert) — implemented, mock-tested
+- [x] Hello-world example in `examples/` + e2e smoke test (fs → memory)
 - [ ] CI: lint (ruff), typecheck (mypy), tests (pytest)
 
 **Done when:** `pip install -e . && winnow init && winnow run --config examples/confluence.yaml` produces a non-empty Qdrant collection, end-to-end, with zero manual Python.

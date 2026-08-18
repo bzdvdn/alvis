@@ -1,0 +1,21 @@
+# Zero-dependency hello world: local markdown files → in-memory index.
+pipeline:
+  source:
+    type: fs
+    config:
+      path: examples/documents
+
+  extract:
+    strategy: auto
+
+  chunk:
+    strategy: auto
+    config:
+      max_tokens: 100
+      overlap: 20
+
+  embed:
+    type: default
+
+  index:
+    type: memory

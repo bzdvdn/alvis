@@ -1,1 +1,5 @@
-"""Embedding stage — chunks → vectors. (v0.1 placeholder)"""
+"""Embedding stage — chunks → vectors."""
+
+from winnow.embed.hash import Embedder, HashEmbedder
+
+__all__ = ["Embedder", "HashEmbedder"]

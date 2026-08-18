@@ -1,64 +1,62 @@
-"""Canonical Content Tree models.
+"""Canonical Content Tree runtime models.
 
 Stage contract (v0, provisional — hardens toward v1.0):
     Source  →  Artifact  →  Canonical Content Tree  →  Chunk  →  Embedding  →  Index
+
+The public YAML config lives in `winnow.config`; these are the runtime objects
+that flow through the pipeline. Models are pydantic (frozen) so the contract
+is validated, serializable, and versionable.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import hashlib
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
-@dataclass(frozen=True)
-class SourceConfig:
-    """Declarative description of a source adapter."""
-
-    type: str
-    config: dict[str, object] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class ChunkConfig:
-    """Declarative description of a chunking strategy."""
-
-    strategy: str = "auto"
-    max_tokens: int = 500
-    overlap: int = 50
-
-
-@dataclass(frozen=True)
-class PipelineConfig:
-    """Top-level pipeline definition, mirroring the YAML contract."""
-
-    source: SourceConfig
-    extract: object | None = None
-    chunk: ChunkConfig = field(default_factory=ChunkConfig)
-    embed: object | None = None
-    index: object | None = None
-
-
-@dataclass(frozen=True)
-class Artifact:
+class Artifact(BaseModel):
     """A raw snapshot of a single document obtained from a source."""
+
+    model_config = ConfigDict(frozen=True)
 
     step_id: str
     uri: str
     content_type: str
     data: bytes
-    metadata: dict[str, object] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass(frozen=True)
-class Chunk:
+class Chunk(BaseModel):
     """A piece of the canonical content ready for embedding."""
+
+    model_config = ConfigDict(frozen=True)
 
     text: str
     source_uri: str
-    metadata: dict[str, object] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class Section(BaseModel):
+    """A heading-anchored block of the Canonical Content Tree."""
+
+    model_config = ConfigDict(frozen=True)
+
+    heading: str
+    body: str
+
+
+class Document(BaseModel):
+    """Canonical Content Tree v0 — the intermediate form between extraction and chunking."""
+
+    model_config = ConfigDict(frozen=True)
+
+    uri: str
+    title: str
+    sections: tuple[Section, ...] = Field(default_factory=tuple)
 
 
 def content_hash(artifact: Artifact) -> str:
     """Deterministic content hash used for dedup (v0.2+)."""
-    import hashlib
-
     return hashlib.sha256(artifact.data).hexdigest()
