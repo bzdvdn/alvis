@@ -17,10 +17,13 @@ Goal: a runnable skeleton with a real hello-world path (Confluence → Qdrant) d
 - [x] Config loader (`pipeline:` grammar per constitution example)
 - [x] Canonical Content Tree core model (v0, provisional; pydantic)
 - [x] Stage interfaces: extract / chunk / embed / index (async protocols)
-- [ ] Confluence source adapter (minimal, read-only) — implemented, needs live test
-- [ ] Qdrant index adapter (minimal, upsert) — implemented, mock-tested
+- [x] Confluence source adapter (minimal, read-only) — live-verified via mock Confluence
+- [x] Qdrant index adapter (minimal, upsert) — live-verified, collection created + searchable
 - [x] Hello-world example in `examples/` + e2e smoke test (fs → memory)
 - [x] CI: lint (ruff), typecheck (mypy), tests (pytest) — GitHub Actions
+- [x] docker-compose dev environment (mock Confluence + real Qdrant); e2e verified
+
+**Done when:** `pip install -e . && winnow init && winnow run --config examples/confluence.yaml` produces a non-empty Qdrant collection, end-to-end, with zero manual Python. (Met: see examples/confluence-qdrant.yaml + docker-compose.)
 
 **Done when:** `pip install -e . && winnow init && winnow run --config examples/confluence.yaml` produces a non-empty Qdrant collection, end-to-end, with zero manual Python.
 

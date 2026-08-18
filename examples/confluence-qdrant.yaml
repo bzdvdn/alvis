@@ -1,0 +1,27 @@
+# End-to-end against docker-compose services:
+#   docker compose up -d --build
+#   winnow run examples/confluence-qdrant.yaml
+pipeline:
+  source:
+    type: confluence
+    config:
+      url: http://localhost:8090
+      space: TEAM
+
+  extract:
+    strategy: auto
+
+  chunk:
+    strategy: auto
+    config:
+      max_tokens: 200
+      overlap: 20
+
+  embed:
+    type: default
+
+  index:
+    type: qdrant
+    config:
+      url: http://localhost:6333
+      collection: winnow_docs
