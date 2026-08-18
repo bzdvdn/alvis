@@ -68,7 +68,12 @@ async def test_qdrant_http_error_raises_source_error() -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, json={"detail": "boom"})
 
-    index = QdrantIndex(url="http://localhost:6333", collection="test")
+    index = QdrantIndex(
+        url="http://localhost:6333",
+        collection="test",
+        retries=0,
+        retry_backoff=0.0,
+    )
     index.client.transport = _mock_transport(handler)
 
     with pytest.raises(SourceError):

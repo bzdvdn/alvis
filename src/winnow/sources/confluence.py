@@ -22,12 +22,18 @@ class ConfluenceSource:
         space: str,
         api_token_env: str | None = None,
         username: str | None = None,
+        retries: int = 3,
+        retry_backoff: float = 1.0,
+        verify: bool | str = True,
     ) -> None:
         self.space = space
         self.client = HttpClient(
             base_url=url,
             api_token_env=api_token_env,
             username=username,
+            retries=retries,
+            retry_backoff=retry_backoff,
+            verify=verify,
         )
 
     async def fetch(self) -> list[Artifact]:

@@ -48,6 +48,7 @@ Goal: freeze the public contract — Canonical Content Tree v1 + YAML schema v1.
 - [ ] Chunking strategies: auto (token), by heading, by size; overlap support
 - [ ] Memory-safe handling of large PDF/DOCX/XLSX (async + streaming)
 - [x] Idempotent ingestion: deterministic point IDs (uuid5), per-source reconcile pass, dedup by content hash — live-verified (re-run 6→6, change/delete prune)
+- [x] Retries in HttpClient: 429/5xx/network, exponential backoff + jitter, Retry-After; `retries`/`retry_backoff`/`verify` config — live-verified (survived Qdrant outage)
 - [ ] Sources: GitLab, S3
 - [ ] Indexes: PostgreSQL/pgvector
 - [ ] Embedding abstraction: model-agnostic, batching + caching

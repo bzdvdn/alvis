@@ -40,6 +40,11 @@ Re-running a pipeline is idempotent: chunk point IDs are deterministic, so
 identical content is overwritten, and a `reconcile` pass prunes points of
 changed or deleted documents (verified live against Qdrant: 6→6 on re-run).
 
+Transient failures are retried (429/5xx/connection issues) with exponential
+backoff and jitter; `Retry-After` is honored. Per-source/index config accepts
+`retries`, `retry_backoff`, and `verify: false` for self-signed HTTPS (use
+the latter only against trusted internal endpoints).
+
 ## Documentation
 
 - [Constitution](CONSTITUTION.md) — purpose, scope, open-source strategy

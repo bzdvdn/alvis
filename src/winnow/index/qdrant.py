@@ -27,11 +27,17 @@ class QdrantIndex:
         url: str,
         collection: str,
         api_token_env: str | None = None,
+        retries: int = 3,
+        retry_backoff: float = 1.0,
+        verify: bool | str = True,
     ) -> None:
         self.collection = collection
         self.client = HttpClient(
             base_url=url,
             api_token_env=api_token_env,
+            retries=retries,
+            retry_backoff=retry_backoff,
+            verify=verify,
         )
 
     async def upsert(
