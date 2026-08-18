@@ -25,6 +25,8 @@ Goal: a runnable skeleton with a real hello-world path (Confluence → Qdrant) d
 - [x] MinIO in docker-compose (seeded `winnow` bucket) — live-verified S3 source
 - [x] Programmatic API (`winnow.run/run_async/run_many/run_many_async`) + CLI multi-config parallel runs (`--parallel`)
 - [x] Typed Python DSL (`winnow.dsl`) — same config contract as YAML, parity tested
+- [x] OpenAI-compatible embedder (`openai`) with batching + retries — live path verified against Qdrant dims
+- [x] Format parsers: PDF/DOCX/XLSX (`winnow[documents]` extra, lazy deps) — live-verified DOCX e2e into Qdrant
 
 **Done when:** `pip install -e . && winnow init && winnow run --config examples/confluence.yaml` produces a non-empty Qdrant collection, end-to-end, with zero manual Python. (Met: see examples/confluence-qdrant.yaml + docker-compose.)
 
@@ -37,8 +39,8 @@ Goal: attract first contributors and prove the plugin contract.
 - [ ] Docs site (README → docs/: getting started, FAQ)
 - [ ] `CONTRIBUTING.md`: "how to write a connector" as the cover page
 - [ ] Connector fixture + golden-test requirements enforced in CI
-- [ ] Format parsers: Markdown, HTML (from Confluence export)
-- [ ] CLI polish: structured output, exit codes, `--dry-run`
+- [x] Format parsers: Markdown, HTML (from Confluence export); PDF/DOCX/XLSX (done in v0.1 via `winnow[documents]`)
+- [x] CLI polish: structured output, exit codes, `--dry-run` (multi-config `run --parallel`)
 - [ ] First external connector PRs (pgvector backend or GitLab source)
 
 **Done when:** at least one external contribution merged; a non-core-team member delivers a working connector feature.

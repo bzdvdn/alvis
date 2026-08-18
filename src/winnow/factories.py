@@ -11,7 +11,7 @@ from winnow.config.models import (
     IndexConfig,
     SourceConfig,
 )
-from winnow.embed import HashEmbedder
+from winnow.embed import ApiEmbedder, HashEmbedder
 from winnow.extract import AutoExtractor
 from winnow.index import MemoryIndex, QdrantIndex
 from winnow.registry import KNOWN_SOURCES
@@ -74,9 +74,11 @@ def build_chunker(config: ChunkConfig) -> AutoChunker:
     raise ConfigError(f"chunk strategy {config.strategy!r} is not implemented")
 
 
-def build_embedder(config: EmbedConfig) -> HashEmbedder:
+def build_embedder(config: EmbedConfig) -> HashEmbedder | ApiEmbedder:
     if config.type == "default":
         return HashEmbedder()
+    if config.type == "openai":
+        return ApiEmbedder(**config.config)
     raise ConfigError(f"embed type {config.type!r} is not implemented")
 
 

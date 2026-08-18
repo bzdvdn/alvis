@@ -8,7 +8,20 @@ Source → Artifact → Extraction → Canonical Content Tree → Chunking → E
 
 ## Status
 
-Alpha (v0.1.0). Core pipeline runs end-to-end: fs/Confluence/GitHub/GitLab/S3 sources → extract → chunk → embed → memory/Qdrant index. Async-native (httpx). The embedder (`default`) is a deterministic placeholder for v0.1; real models land in v1.0.
+Alpha (v0.1.0). Core pipeline runs end-to-end: fs/Confluence/GitHub/GitLab/S3 sources → extract → chunk → embed → memory/Qdrant index. Async-native (httpx). The embedder ships a deterministic placeholder (`default`) plus an OpenAI-compatible API adapter (`openai`).
+
+## Formats
+
+Extraction (`strategy: auto`) understands Markdown, HTML, and plain text out
+of the box, and PDF/DOCX/XLSX when the optional extra is installed:
+
+```bash
+pip install -e .[documents]
+```
+
+PDF pages become `Page N` sections, DOCX headings become section headings,
+and each XLSX worksheet becomes a `<sheet title>` section with `|`-joined
+cells.
 
 ## Quick start
 
@@ -81,6 +94,36 @@ pipeline is reported and does not stop the others:
 winnow run examples/confluence-qdrant.yaml examples/s3-qdrant.yaml --parallel 2
 ```
 
+## Embedding
+
+`embed.type: default` is a deterministic placeholder for local/dev work.
+For real vectors use the OpenAI-compatible `openai` embedder (works with
+OpenAI, Azure, local servers):
+
+```yaml
+pipeline:
+  source:
+    type: fs
+    config:
+      path: ./docs
+  embed:
+    type: openai
+    config:
+      base_url: https://api.openai.com/v1
+      model: text-embedding-3-small
+      api_token_env: OPENAI_API_KEY
+      batch_size: 32
+  index:
+    type: qdrant
+    config:
+      url: http://localhost:6333
+      collection: winnow_docs
+```
+
+Chunks are embedded in batches (`batch_size`) through the same
+retry/backoff machinery as sources, and the Qdrant collection is created
+with whatever dimensionality the model returns.
+
 ## Embedding in your application
 
 The pipeline is just an async API, so it slots into workers, schedulers, or
@@ -129,9 +172,10 @@ await run_async(cfg)                  # or inside your own async app
 
 Stage builders mirror the YAML schema: `dsl.fs`, `dsl.confluence`,
 `dsl.github`, `dsl.gitlab` (self-hosted via `url`), `dsl.s3`,
-`dsl.extract`, `dsl.chunk`, `dsl.embed`, `dsl.qdrant`, `dsl.memory`.
-Defaults are omitted from the underlying config, and `pipeline(...)`
-accepts only the stages you want to override.
+`dsl.extract`, `dsl.chunk`, `dsl.embed`, `dsl.embed_openai`, `dsl.qdrant`,
+`dsl.memory`. Defaults are omitted from the underlying config, and
+`pipeline(...)` accepts only the stages you want to override. See
+[docs/dsl.md](docs/dsl.md) and [examples/python_dsl.py](examples/python_dsl.py).
 
 Re-running a pipeline is idempotent: chunk point IDs are deterministic, so
 identical content is overwritten, and a `reconcile` pass prunes points of
@@ -146,6 +190,7 @@ the latter only against trusted internal endpoints).
 
 - [Constitution](CONSTITUTION.md) — purpose, scope, open-source strategy
 - [Roadmap](ROADMAP.md) — build plan
+- [Python DSL guide](docs/dsl.md) — describing pipelines from code
 - `docs/` — guides (getting started, contributor guide, in progress)
 
 ## License

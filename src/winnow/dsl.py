@@ -184,6 +184,34 @@ def embed() -> EmbedConfig:
     return EmbedConfig(type="default")
 
 
+def embed_openai(
+    base_url: str,
+    model: str,
+    api_token_env: str | None = None,
+    batch_size: int = 32,
+    retries: int = 3,
+    retry_backoff: float = 1.0,
+    verify: bool | str = True,
+) -> EmbedConfig:
+    """Embed via an OpenAI-compatible ``/embeddings`` endpoint.
+
+    Requires the endpoint to return OpenAI's response shape
+    (``data[].embedding``); ``api_token_env`` is sent as ``Bearer``.
+    """
+    return EmbedConfig(
+        type="openai",
+        config={
+            "base_url": base_url,
+            "model": model,
+            **({"api_token_env": api_token_env} if api_token_env else {}),
+            **({"batch_size": batch_size} if batch_size != 32 else {}),
+            **({"retries": retries} if retries != 3 else {}),
+            **({"retry_backoff": retry_backoff} if retry_backoff != 1.0 else {}),
+            **({"verify": verify} if verify is not True else {}),
+        },
+    )
+
+
 def qdrant(
     url: str,
     collection: str,

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from winnow.config import ConfigError, PipelineConfig, load_config
-from winnow.core.models import Document, content_hash
+from winnow.core.models import Chunk, Document, content_hash
 from winnow.errors import PipelineError
 from winnow.factories import (
     build_chunker,
@@ -76,6 +76,7 @@ class PipelineEngine:
         documents = 0
         indexed = 0
         current: dict[str, str] = {}
+        pending: list[tuple[Chunk, str]] = []
         try:
             artifacts = await source.fetch()
         except SourceError as exc:
@@ -91,19 +92,30 @@ class PipelineEngine:
                 document: Document = await extractor.extract(artifact)
                 for chunk in await chunker.chunk(document):
                     indexed += 1
-                    if indexer is None:
-                        continue
-                    vector = await embedder.embed(chunk)
-                    await indexer.upsert(
-                        chunk,
-                        vector,
-                        source_id=source_id,
-                        artifact_hash=artifact_hash,
-                    )
+                    if indexer is not None:
+                        pending.append((chunk, artifact_hash))
             except (SourceError, ValueError) as exc:
                 raise PipelineError(
                     f"failed on artifact {artifact.uri}: {exc}"
                 ) from exc
+
+        if indexer is not None and pending:
+            chunks = [chunk for chunk, _ in pending]
+            batch = getattr(embedder, "embed_batch", None)
+            try:
+                if batch is not None:
+                    vectors = await batch(chunks)
+                else:
+                    vectors = [await embedder.embed(chunk) for chunk in chunks]
+            except (SourceError, ValueError) as exc:
+                raise PipelineError(f"embedding failed: {exc}") from exc
+            for (chunk, artifact_hash), vector in zip(pending, vectors, strict=True):
+                await indexer.upsert(
+                    chunk,
+                    vector,
+                    source_id=source_id,
+                    artifact_hash=artifact_hash,
+                )
 
         if indexer is not None:
             await indexer.reconcile(source_id, current)

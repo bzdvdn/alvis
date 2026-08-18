@@ -7,8 +7,8 @@ from pathlib import Path
 
 from winnow.core.models import Artifact
 from winnow.sources.base import SourceError
-from winnow.sources.content_types import TEXT_EXTENSIONS
 from winnow.sources.content_types import content_type as ct_from_path
+from winnow.sources.content_types import is_ingestible
 
 
 class FilesystemSource:
@@ -48,5 +48,5 @@ class FilesystemSource:
         except OSError as exc:
             raise SourceError(f"failed to scan {self.root}: {exc}") from exc
         if self.pattern is None:
-            files = [p for p in files if p.suffix.lower() in TEXT_EXTENSIONS]
+            files = [p for p in files if is_ingestible(p)]
         return files

@@ -75,6 +75,16 @@ async def run_many_async(
     return list(await asyncio.gather(*(_one(e) for e in engines)))
 
 
+def describe(config: ConfigLike) -> str:
+    """Human-readable summary of a pipeline config (dry-run output).
+
+    Works for a YAML path, a loaded :class:`PipelineConfig`, or a config
+    built with the :mod:`winnow.dsl` builders. Informational only — does
+    not validate that adapters are supported.
+    """
+    return PipelineEngine(_load(config)).describe()
+
+
 def run_many(
     configs: Iterable[ConfigLike],
     *,

@@ -14,7 +14,7 @@ import httpx
 
 from winnow.core.models import Artifact
 from winnow.sources.base import SourceError
-from winnow.sources.content_types import content_type, is_text_file, matches_globs
+from winnow.sources.content_types import content_type, is_ingestible, matches_globs
 from winnow.sources.http import HttpClient
 
 _S3_XML = "{http://s3.amazonaws.com/doc/2006-03-01/}"
@@ -225,4 +225,4 @@ class S3Source:
             return False
         if self.include_globs is not None:
             return matches_globs(self.include_globs, key)
-        return is_text_file(key)
+        return is_ingestible(key)

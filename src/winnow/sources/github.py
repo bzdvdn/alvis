@@ -8,7 +8,7 @@ from urllib.parse import quote
 import httpx
 
 from winnow.core.models import Artifact
-from winnow.sources.content_types import content_type, is_text_file, matches_globs
+from winnow.sources.content_types import content_type, is_ingestible, matches_globs
 from winnow.sources.http import HttpClient
 
 _GITHUB_API = "https://api.github.com"
@@ -91,4 +91,4 @@ class GitHubSource:
             return False
         if self.include_globs is not None:
             return matches_globs(self.include_globs, file_path)
-        return is_text_file(file_path)
+        return is_ingestible(file_path)
