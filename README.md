@@ -74,6 +74,34 @@ The mock Confluence implements the `/rest/api` contract our adapter consumes
 MinIO is seeded (`minio-init`) with a `winnow` bucket containing sample docs
 and a video that should be excluded (`examples/s3-seed/`).
 
+Several pipelines run in a single command and execute concurrently; a failing
+pipeline is reported and does not stop the others:
+
+```bash
+winnow run examples/confluence-qdrant.yaml examples/s3-qdrant.yaml --parallel 2
+```
+
+## Embedding in your application
+
+The pipeline is just an async API, so it slots into workers, schedulers, or
+web apps. `winnow` exposes thin sync/async entry points:
+
+```python
+from winnow import run, run_async, run_many, run_many_async
+
+run("pipeline.yaml")                    # single pipeline, sync (celery/scripts)
+await run_async("pipeline.yaml")        # single pipeline, async (FastAPI, ...)
+
+results = run_many(["a.yaml", "b.yaml"], max_parallel=4)   # parallel, sync
+await run_many_async(["a.yaml", "b.yaml"])                 # parallel, async
+```
+
+All variants return `PipelineResult(documents_ingested, chunks_indexed)`.
+Parallel pipelines share one event loop; each pipeline owns its source and
+index adapters (no shared mutable state). If multiple pipelines write to the
+same Qdrant collection, give them distinct collections or source identities so
+the per-source `reconcile` pass does not prune each other's points.
+
 Re-running a pipeline is idempotent: chunk point IDs are deterministic, so
 identical content is overwritten, and a `reconcile` pass prunes points of
 changed or deleted documents (verified live against Qdrant: 6→6 on re-run).

@@ -10,7 +10,7 @@ import typer
 from winnow import __version__
 from winnow.config import ConfigError, load_config
 from winnow.errors import PipelineError
-from winnow.pipeline.engine import PipelineEngine
+from winnow.pipeline.engine import PipelineEngine, PipelineResult
 from winnow.registry import check_pipeline_supported
 
 app = typer.Typer(
@@ -116,46 +116,83 @@ def validate(config: str = typer.Argument(..., help="Path to the pipeline YAML c
 
 @app.command()
 def run(
-    config: str = typer.Argument(..., help="Path to the pipeline YAML config."),  # noqa: B008
+    configs: list[Path] = typer.Argument(  # noqa: B008
+        ...,
+        help="Paths to pipeline YAML configs. Multiple paths run in parallel.",
+    ),
     dry_run: bool = typer.Option(  # noqa: B008
         False,
         "--dry-run",
-        help="Validate and describe the pipeline without executing it.",
+        help="Validate and describe the pipelines without executing them.",
+    ),
+    parallel: int = typer.Option(  # noqa: B008
+        4,
+        "--parallel",
+        help="Maximum number of pipelines to run concurrently.",
     ),
 ) -> None:
-    """Run the configured ingestion pipeline."""
-    try:
-        engine = PipelineEngine.from_yaml(config)
-    except ConfigError as exc:
-        typer.echo(f"Invalid config:\n{exc}", err=True)
-        raise typer.Exit(1) from exc
+    """Run the configured ingestion pipeline(s)."""
+    if parallel < 1:
+        typer.echo("Error: --parallel must be >= 1", err=True)
+        raise typer.Exit(2)
+
+    engines: list[PipelineEngine] = []
+    for config in configs:
+        try:
+            engines.append(PipelineEngine.from_yaml(config))
+        except ConfigError as exc:
+            typer.echo(f"Invalid config {config}:\n{exc}", err=True)
+            raise typer.Exit(1) from exc
 
     if dry_run:
-        problems = check_pipeline_supported(
-            source=engine.config.source.type,
-            extract=engine.config.extract.strategy,
-            chunk=engine.config.chunk.strategy,
-            embed=engine.config.embed.type,
-            index=engine.config.index.type if engine.config.index else None,
-        )
-        if problems:
-            typer.echo(
-                "Invalid config:\n" + "\n".join(f"  {p}" for p in problems),
-                err=True,
+        invalid = False
+        for config, engine in zip(configs, engines, strict=True):
+            problems = check_pipeline_supported(
+                source=engine.config.source.type,
+                extract=engine.config.extract.strategy,
+                chunk=engine.config.chunk.strategy,
+                embed=engine.config.embed.type,
+                index=engine.config.index.type if engine.config.index else None,
             )
+            if problems:
+                invalid = True
+                typer.echo(
+                    f"Invalid config {config}:\n"
+                    + "\n".join(f"  {p}" for p in problems),
+                    err=True,
+                )
+                continue
+            typer.echo(f"Pipeline dry-run for {config}:")
+            typer.echo(engine.describe())
+        if invalid:
             raise typer.Exit(1)
-        typer.echo(f"Pipeline dry-run for {config}:")
-        typer.echo(engine.describe())
         return
 
-    try:
-        result = asyncio.run(engine.run())
-    except PipelineError as exc:
-        typer.echo(f"Cannot run pipeline:\n  {exc}", err=True)
-        raise typer.Exit(1) from exc
+    async def _run_all() -> list[PipelineResult | BaseException]:
+        semaphore = asyncio.Semaphore(parallel)
 
-    typer.echo(f"Pipeline finished: {result.documents_ingested} documents, "
-               f"{result.chunks_indexed} chunks indexed")
+        async def _one(engine: PipelineEngine) -> PipelineResult | BaseException:
+            async with semaphore:
+                try:
+                    return await engine.run()
+                except (PipelineError, ConfigError) as exc:
+                    return exc
+
+        return list(await asyncio.gather(*(_one(e) for e in engines)))
+
+    results = asyncio.run(_run_all())
+    failed = 0
+    for config, result in zip(configs, results, strict=True):
+        if isinstance(result, BaseException):
+            failed += 1
+            typer.echo(f"{config}: FAILED: {result}", err=True)
+        else:
+            typer.echo(
+                f"{config}: {result.documents_ingested} documents, "
+                f"{result.chunks_indexed} chunks indexed"
+            )
+    if failed:
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":
