@@ -18,7 +18,7 @@ from types import ModuleType
 from typing import Any
 
 from winnow.core.ids import point_id
-from winnow.core.models import Chunk
+from winnow.core.models import Chunk, SearchHit
 
 
 def _vector_literal(vector: list[float]) -> str:
@@ -156,6 +156,31 @@ class PgVectorIndex:
             params = (source_id,)
         async with await self._connect() as connection:
             await connection.execute(delete, params)
+
+    async def search(self, vector: list[float], *, top_k: int = 5) -> list[SearchHit]:
+        """Nearest-neighbour search via cosine distance ``<=>``, best first.
+
+        Score is ``1 - cosine_distance`` (cosine similarity). psycopg does not
+        serialise floats into the ``vector`` cast, so the literal is inlined.
+        """
+        statement = _psql().SQL(
+            "SELECT text, source_uri, metadata, "
+            "1 - (embedding <=> %s::vector) AS score "
+            "FROM {} ORDER BY embedding <=> %s::vector LIMIT %s"
+        ).format(self._table())
+        literal = _vector_literal(vector)
+        async with await self._connect() as connection:
+            cursor = await connection.execute(statement, (literal, literal, top_k))
+            rows = await cursor.fetchall()
+        return [
+            SearchHit(
+                text=row[0],
+                source_uri=row[1],
+                metadata=dict(row[2]),
+                score=float(row[3]),
+            )
+            for row in rows
+        ]
 
 
 __all__ = ["PgVectorIndex"]

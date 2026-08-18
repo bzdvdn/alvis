@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from winnow.core.ids import point_id
-from winnow.core.models import Chunk
+from winnow.core.models import Chunk, SearchHit
 from winnow.sources.base import SourceError
 from winnow.sources.http import HttpClient
 
@@ -107,6 +107,34 @@ class QdrantIndex:
                 f"/collections/{self.collection}/points/delete",
                 payload={"points": stale_ids},
             )
+
+    async def search(self, vector: list[float], *, top_k: int = 5) -> list[SearchHit]:
+        """Nearest-neighbour search; scores are cosine similarities.
+
+        The collection must already exist (created by an ingestion run).
+        """
+        response = await self.client.request(
+            "POST",
+            f"/collections/{self.collection}/points/search",
+            payload={
+                "vector": vector,
+                "limit": top_k,
+                "with_payload": True,
+            },
+        )
+        return [
+            SearchHit(
+                text=str(item.get("payload", {}).get("text", "")),
+                source_uri=str(item.get("payload", {}).get("source_uri", "")),
+                metadata={
+                    key: value
+                    for key, value in item.get("payload", {}).items()
+                    if key not in ("text", "source_uri", "_source", "artifact_hash")
+                },
+                score=float(item.get("score", 0.0)),
+            )
+            for item in response.get("result", [])
+        ]
 
     async def _ensure_collection(self, dimensions: int) -> None:
         if await self._collection_exists():

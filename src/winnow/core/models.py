@@ -57,6 +57,17 @@ class Document(BaseModel):
     sections: tuple[Section, ...] = Field(default_factory=tuple)
 
 
+class SearchHit(BaseModel):
+    """A retrieval result: a stored chunk matched against a query vector."""
+
+    model_config = ConfigDict(frozen=True)
+
+    text: str
+    source_uri: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    score: float
+
+
 def content_hash(artifact: Artifact) -> str:
     """Deterministic content hash used for dedup (v0.2+)."""
     return hashlib.sha256(artifact.data).hexdigest()

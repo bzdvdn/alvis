@@ -11,6 +11,7 @@ from winnow import __version__
 from winnow.config import ConfigError, load_config
 from winnow.errors import PipelineError
 from winnow.pipeline.engine import PipelineEngine, PipelineResult
+from winnow.pipeline.runner import query_async
 from winnow.registry import check_pipeline_supported
 
 app = typer.Typer(
@@ -193,6 +194,42 @@ def run(
             )
     if failed:
         raise typer.Exit(1)
+
+
+@app.command()
+def query(
+    config: str = typer.Argument(  # noqa: B008
+        ...,
+        help="Path to the pipeline YAML config (uses its embed + index stages).",
+    ),
+    text: str = typer.Option(  # noqa: B008
+        ...,
+        "--text",
+        "-t",
+        help="Query text to embed and search for.",
+    ),
+    top_k: int = typer.Option(  # noqa: B008
+        5,
+        "--top-k",
+        help="Number of nearest chunks to return.",
+    ),
+) -> None:
+    """Retrieve the chunks closest to --text from the configured index."""
+    try:
+        results = asyncio.run(query_async(config, text, top_k=top_k))
+    except (ConfigError, PipelineError) as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    if not results:
+        typer.echo("No matches found.")
+        return
+    for index, hit in enumerate(results, start=1):
+        typer.echo(f"[{index}] {hit.score:.4f}  {hit.source_uri}")
+        for key, value in hit.metadata.items():
+            if value:
+                typer.echo(f"      {key}: {value}")
+        snippet = " ".join(hit.text.split())
+        typer.echo(f"      {snippet[:180]}")
 
 
 if __name__ == "__main__":

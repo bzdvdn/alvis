@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Protocol
 
-from winnow.core.models import Chunk
+from winnow.core.models import Chunk, SearchHit
 
 
 class Indexer(Protocol):
@@ -35,5 +35,18 @@ class Indexer(Protocol):
 
         ``current`` maps ``source_uri -> artifact_hash`` from the latest run;
         stale points (changed or removed documents) are pruned.
+        """
+        ...
+
+    async def search(
+        self,
+        vector: list[float],
+        *,
+        top_k: int = 5,
+    ) -> list[SearchHit]:
+        """Return the ``top_k`` closest chunks to ``vector``, best first.
+
+        Scores are cosine similarities in ``[0, 1]``; implementations must
+        sort results so the highest score comes first.
         """
         ...

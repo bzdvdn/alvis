@@ -54,6 +54,7 @@ Goal: freeze the public contract — Canonical Content Tree v1 + YAML schema v1.
 - [ ] Chunking strategy: by size
 - [ ] Memory-safe handling of large PDF/DOCX/XLSX (async + streaming)
 - [x] Idempotent ingestion: deterministic point IDs (uuid5), per-source reconcile pass, dedup by content hash — live-verified (re-run 6→6, change/delete prune)
+- [x] Retrieval: `winnow.query` / `query_async` (SearchHit with cosine score) + CLI `winnow query` — live-verified against pgvector (exact section match) and Qdrant (1.0 for verbatim chunk)
 - [x] Retries in HttpClient: 429/5xx/network, exponential backoff + jitter, Retry-After; `retries`/`retry_backoff`/`verify` config — live-verified (survived Qdrant outage)
 - [x] Sources: GitHub, GitLab (self-hosted via `url`), S3 (SigV4, no boto3; MinIO-compatible) — include/exclude globs + prefix/path scoping; live-verified against MinIO (videos excluded, idempotent re-run)
 - [x] Indexes: PostgreSQL/pgvector (`winnow[pgindex]`, psycopg 3, idempotent upsert + reconcile)

@@ -51,6 +51,9 @@ parameters with docstrings.
 - `run(config)` / `run_async(config)` — one pipeline, sync/async.
 - `run_many([...], max_parallel=N)` / `run_many_async(...)` — several
   pipelines concurrently on one event loop.
+- `query(config, text, top_k=N)` / `query_async(...)` — retrieve the closest
+  chunks to a query string from the configured index (returns `SearchHit`s
+  with cosine scores).
 - `describe(config)` — human-readable dry-run summary.
 
 See also [examples/python_dsl.py](../examples/python_dsl.py), which mirrors

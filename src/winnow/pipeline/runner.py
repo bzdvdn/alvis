@@ -21,7 +21,9 @@ import asyncio
 from collections.abc import Iterable
 from pathlib import Path
 
-from winnow.config import PipelineConfig, load_config
+from winnow.config import ConfigError, PipelineConfig, load_config
+from winnow.core.models import Chunk, SearchHit
+from winnow.factories import build_embedder, build_indexer
 from winnow.index.base import Indexer
 from winnow.pipeline.engine import PipelineEngine, PipelineResult
 
@@ -83,6 +85,43 @@ def describe(config: ConfigLike) -> str:
     not validate that adapters are supported.
     """
     return PipelineEngine(_load(config)).describe()
+
+
+async def query_async(
+    config: ConfigLike,
+    text: str,
+    *,
+    top_k: int = 5,
+    indexer: Indexer | None = None,
+) -> list[SearchHit]:
+    """Retrieve the chunks closest to ``text`` from the configured index.
+
+    Requires the config to define an ``index`` stage; the query string is
+    embedded with the config's embedder, then searched like any chunk. When
+    querying an in-memory index, pass the same ``indexer`` instance that
+    produced the data (other backends re-build their client from config).
+    """
+    cfg = _load(config)
+    if not text.strip():
+        raise ConfigError("query text must not be empty")
+    embedder = build_embedder(cfg.embed)
+    if indexer is None:
+        if cfg.index is None:
+            raise ConfigError("query requires an 'index' stage in the config")
+        indexer = build_indexer(cfg.index)
+    vector = await embedder.embed(Chunk(text=text, source_uri="winnow:query"))
+    return await indexer.search(vector, top_k=top_k)
+
+
+def query(
+    config: ConfigLike,
+    text: str,
+    *,
+    top_k: int = 5,
+    indexer: Indexer | None = None,
+) -> list[SearchHit]:
+    """Synchronous variant of :func:`query_async`."""
+    return asyncio.run(query_async(config, text, top_k=top_k, indexer=indexer))
 
 
 def run_many(

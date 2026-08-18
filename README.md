@@ -1,14 +1,15 @@
 # Winnow
 
-No-code knowledge ingestion engine. Build corporate knowledge bases from heterogeneous sources (GitLab, Confluence, S3; Markdown, HTML, PDF, DOCX, XLSX, CSV) without writing Python.
+No-code knowledge ingestion and retrieval engine. Build corporate knowledge bases from heterogeneous sources (GitLab, Confluence, S3; Markdown, HTML, PDF, DOCX, XLSX, CSV) without writing Python.
 
 ```
 Source → Artifact → Extraction → Canonical Content Tree → Chunking → Embedding → Index
+                                                Index → nearest-neighbour → SearchHit
 ```
 
 ## Status
 
-Alpha (v0.1.0). Core pipeline runs end-to-end: fs/Confluence/GitHub/GitLab/S3 sources → extract → chunk → embed → memory/Qdrant index. Async-native (httpx). The embedder ships a deterministic placeholder (`default`) plus an OpenAI-compatible API adapter (`openai`).
+Alpha (v0.1.0). Core pipeline runs end-to-end: fs/Confluence/GitHub/GitLab/S3 sources → extract → chunk → embed → memory/Qdrant/pgvector index, plus vector retrieval (`winnow.query`, CLI `winnow query`). Async-native (httpx). The embedder ships a deterministic placeholder (`default`) plus an OpenAI-compatible API adapter (`openai`).
 
 ## Formats
 
@@ -137,6 +138,28 @@ with whatever dimensionality the model returns.
   (`dsn` / `dsn_env`, `table`, requires `pip install winnow[pgindex]`).
   See `examples/pgvector.yaml` and the `postgres` service in docker-compose.
 - `memory` — in-memory store for tests and prototypes.
+
+### Retrieval
+
+Ask questions against an already-loaded index; the query string is embedded
+with the config's embedder and searched nearest-neighbour:
+
+```bash
+winnow query examples/pgvector.yaml --text "how do I install winnow?" --top-k 5
+```
+
+Programmatically (same contract as ingestion):
+
+```python
+from winnow import query, query_async
+
+hits = query("examples/pgvector.yaml", "how do I install winnow?", top_k=5)
+await query_async("examples/pgvector.yaml", "how do I install winnow?")
+```
+
+`SearchHit` carries `text`, `source_uri`, `metadata`, and a cosine `score`
+(best first). For in-memory indexes pass the same `indexer` instance to
+`run`/`query` (persistent backends rebuild their clients from config).
 
 ## Embedding in your application
 
