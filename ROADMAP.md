@@ -20,7 +20,7 @@ Goal: a runnable skeleton with a real hello-world path (Confluence → Qdrant) d
 - [ ] Confluence source adapter (minimal, read-only) — implemented, needs live test
 - [ ] Qdrant index adapter (minimal, upsert) — implemented, mock-tested
 - [x] Hello-world example in `examples/` + e2e smoke test (fs → memory)
-- [ ] CI: lint (ruff), typecheck (mypy), tests (pytest)
+- [x] CI: lint (ruff), typecheck (mypy), tests (pytest) — GitHub Actions
 
 **Done when:** `pip install -e . && winnow init && winnow run --config examples/confluence.yaml` produces a non-empty Qdrant collection, end-to-end, with zero manual Python.
 

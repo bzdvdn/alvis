@@ -63,3 +63,27 @@ def test_run_missing_config(tmp_path: Path) -> None:
     result = runner.invoke(app, ["run", str(tmp_path / "missing.yaml")])
     assert result.exit_code == 1
     assert "not found" in result.output
+
+
+def test_run_dry_run_describes_pipeline(tmp_path: Path) -> None:
+    config = tmp_path / "pipeline.yaml"
+    config.write_text(
+        "pipeline:\n  source:\n    type: fs\n    config:\n      path: /tmp\n"
+        "  index:\n    type: memory\n",
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["run", str(config), "--dry-run"])
+    assert result.exit_code == 0
+    assert "dry-run" in result.output
+    assert "source: fs" in result.output
+    assert "index: memory" in result.output
+
+
+def test_run_dry_run_rejects_unsupported(tmp_path: Path) -> None:
+    config = tmp_path / "pipeline.yaml"
+    config.write_text(
+        "pipeline:\n  source:\n    type: service_now\n", encoding="utf-8"
+    )
+    result = runner.invoke(app, ["run", str(config), "--dry-run"])
+    assert result.exit_code == 1
+    assert "service_now" in result.output

@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from winnow.errors import PipelineError
 from winnow.pipeline.engine import PipelineEngine
 from winnow.sources import FilesystemSource, SourceError
 
@@ -49,3 +50,41 @@ async def test_pipeline_fs_missing_path_raises(tmp_path: Path) -> None:
     source = FilesystemSource(path=str(tmp_path / "nope"))
     with pytest.raises(SourceError):
         await source.fetch()
+
+
+async def test_pipeline_source_failure_wrapped(tmp_path: Path) -> None:
+    config = tmp_path / "pipeline.yaml"
+    config.write_text(
+        "pipeline:\n"
+        "  source:\n"
+        "    type: fs\n"
+        "    config:\n"
+        f"      path: {tmp_path / 'missing'}\n"
+        "  index:\n"
+        "    type: memory\n",
+        encoding="utf-8",
+    )
+    engine = PipelineEngine.from_yaml(config)
+    with pytest.raises(PipelineError, match="source 'fs' failed"):
+        await engine.run()
+
+
+async def test_engine_describe() -> None:
+    config = """\
+pipeline:
+  source:
+    type: fs
+    config:
+      path: /tmp
+  index:
+    type: memory
+"""
+    import tempfile
+
+    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as fh:
+        fh.write(config)
+        path = fh.name
+    engine = PipelineEngine.from_yaml(path)
+    description = engine.describe()
+    assert "source: fs" in description
+    assert "index: memory" in description

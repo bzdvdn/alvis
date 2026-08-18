@@ -18,6 +18,7 @@ winnow --version
 winnow init                # scaffold winnow.yaml
 winnow validate winnow.yaml
 winnow run examples/hello-pipeline.yaml   # zero-dependency hello world
+winnow run winnow.yaml --dry-run          # describe pipeline without running
 ```
 
 ## Documentation

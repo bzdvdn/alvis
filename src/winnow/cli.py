@@ -9,9 +9,9 @@ import typer
 
 from winnow import __version__
 from winnow.config import ConfigError, load_config
+from winnow.errors import PipelineError
 from winnow.pipeline.engine import PipelineEngine
 from winnow.registry import check_pipeline_supported
-from winnow.sources.base import SourceError
 
 app = typer.Typer(
     name="winnow",
@@ -115,7 +115,14 @@ def validate(config: str = typer.Argument(..., help="Path to the pipeline YAML c
 
 
 @app.command()
-def run(config: str = typer.Argument(..., help="Path to the pipeline YAML config.")) -> None:
+def run(
+    config: str = typer.Argument(..., help="Path to the pipeline YAML config."),  # noqa: B008
+    dry_run: bool = typer.Option(  # noqa: B008
+        False,
+        "--dry-run",
+        help="Validate and describe the pipeline without executing it.",
+    ),
+) -> None:
     """Run the configured ingestion pipeline."""
     try:
         engine = PipelineEngine.from_yaml(config)
@@ -123,10 +130,28 @@ def run(config: str = typer.Argument(..., help="Path to the pipeline YAML config
         typer.echo(f"Invalid config:\n{exc}", err=True)
         raise typer.Exit(1) from exc
 
+    if dry_run:
+        problems = check_pipeline_supported(
+            source=engine.config.source.type,
+            extract=engine.config.extract.strategy,
+            chunk=engine.config.chunk.strategy,
+            embed=engine.config.embed.type,
+            index=engine.config.index.type if engine.config.index else None,
+        )
+        if problems:
+            typer.echo(
+                "Invalid config:\n" + "\n".join(f"  {p}" for p in problems),
+                err=True,
+            )
+            raise typer.Exit(1)
+        typer.echo(f"Pipeline dry-run for {config}:")
+        typer.echo(engine.describe())
+        return
+
     try:
         result = asyncio.run(engine.run())
-    except (ConfigError, SourceError) as exc:
-        typer.echo(f"Cannot run pipeline:\n{exc}", err=True)
+    except PipelineError as exc:
+        typer.echo(f"Cannot run pipeline:\n  {exc}", err=True)
         raise typer.Exit(1) from exc
 
     typer.echo(f"Pipeline finished: {result.documents_ingested} documents, "

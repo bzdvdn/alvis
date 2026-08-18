@@ -7,6 +7,7 @@ from pathlib import Path
 
 from winnow.config import ConfigError, PipelineConfig, load_config
 from winnow.core.models import Document
+from winnow.errors import PipelineError
 from winnow.factories import (
     build_chunker,
     build_embedder,
@@ -15,6 +16,7 @@ from winnow.factories import (
     build_source,
 )
 from winnow.registry import check_pipeline_supported
+from winnow.sources.base import SourceError
 
 
 @dataclass
@@ -35,6 +37,19 @@ class PipelineEngine:
     def from_yaml(cls, path: str | Path) -> PipelineEngine:
         return cls(load_config(path))
 
+    def describe(self) -> str:
+        """Human-readable summary of the configured pipeline (dry-run output)."""
+        index = self.config.index.type if self.config.index else "not configured"
+        return (
+            f"  source: {self.config.source.type}\n"
+            f"  extract: {self.config.extract.strategy}\n"
+            f"  chunk: {self.config.chunk.strategy} "
+            f"(max_tokens={self.config.chunk.max_tokens}, "
+            f"overlap={self.config.chunk.overlap})\n"
+            f"  embed: {self.config.embed.type}\n"
+            f"  index: {index}"
+        )
+
     async def run(self) -> PipelineResult:
         problems = check_pipeline_supported(
             source=self.config.source.type,
@@ -54,13 +69,26 @@ class PipelineEngine:
 
         documents = 0
         indexed = 0
-        for artifact in await source.fetch():
+        try:
+            artifacts = await source.fetch()
+        except SourceError as exc:
+            raise PipelineError(
+                f"source '{self.config.source.type}' failed: {exc}"
+            ) from exc
+
+        for artifact in artifacts:
             documents += 1
-            document: Document = await extractor.extract(artifact)
-            for chunk in await chunker.chunk(document):
-                indexed += 1
-                if indexer is None:
-                    continue
-                vector = await embedder.embed(chunk)
-                await indexer.upsert(chunk, vector)
+            try:
+                document: Document = await extractor.extract(artifact)
+                for chunk in await chunker.chunk(document):
+                    indexed += 1
+                    if indexer is None:
+                        continue
+                    vector = await embedder.embed(chunk)
+                    await indexer.upsert(chunk, vector)
+            except (SourceError, ValueError) as exc:
+                raise PipelineError(
+                    f"failed on artifact {artifact.uri}: {exc}"
+                ) from exc
+
         return PipelineResult(documents_ingested=documents, chunks_indexed=indexed)
