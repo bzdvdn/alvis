@@ -1,0 +1,1 @@
+"""Chunking stage — Canonical Content Tree → chunks. (v0.1 placeholder)"""

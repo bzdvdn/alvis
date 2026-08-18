@@ -1,0 +1,27 @@
+pipeline:
+  source:
+    type: confluence
+    config:
+      url: https://wiki.example.com
+      space: TEAM
+      api_token_env: CONFLUENCE_API_TOKEN
+
+  extract:
+    strategy: auto
+
+  chunk:
+    strategy: auto
+    config:
+      max_tokens: 500
+      overlap: 50
+
+  embed:
+    type: default
+    config:
+      model: text-embedding-3-small
+
+  index:
+    type: qdrant
+    config:
+      url: http://localhost:6333
+      collection: winnow_docs

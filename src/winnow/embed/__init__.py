@@ -1,0 +1,1 @@
+"""Embedding stage — chunks → vectors. (v0.1 placeholder)"""

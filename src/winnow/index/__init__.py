@@ -1,0 +1,1 @@
+"""Index stage — vectors → vector store (Qdrant, pgvector). (v0.1 placeholder)"""

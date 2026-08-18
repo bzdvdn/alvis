@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "winnow"
+version = "0.1.0"
+description = "No-code framework for building corporate knowledge bases from heterogeneous sources"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Winnow contributors" }]
+keywords = ["rag", "ingestion", "knowledge-base", "etl", "search"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+dependencies = [
+    "typer>=0.12",
+    "PyYAML>=6.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/winnow/winnow"
+Documentation = "https://github.com/winnow/winnow#readme"
+
+[project.scripts]
+winnow = "winnow.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/winnow"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = []
+
+[tool.mypy]
+python_version = "3.10"
+strict = true

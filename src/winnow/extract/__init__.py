@@ -1,0 +1,1 @@
+"""Extraction stage — artifact → Canonical Content Tree. (v0.1 placeholder)"""
