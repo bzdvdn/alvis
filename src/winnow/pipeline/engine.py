@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from winnow.config import ConfigError, PipelineConfig, load_config
-from winnow.core.models import Document
+from winnow.core.models import Document, content_hash
 from winnow.errors import PipelineError
 from winnow.factories import (
     build_chunker,
@@ -14,7 +14,9 @@ from winnow.factories import (
     build_extractor,
     build_indexer,
     build_source,
+    source_identity,
 )
+from winnow.index.base import Indexer
 from winnow.registry import check_pipeline_supported
 from winnow.sources.base import SourceError
 
@@ -30,8 +32,9 @@ class PipelineResult:
 class PipelineEngine:
     """Executes a pipeline defined declaratively in YAML."""
 
-    def __init__(self, config: PipelineConfig) -> None:
+    def __init__(self, config: PipelineConfig, *, indexer: Indexer | None = None) -> None:
         self.config = config
+        self._indexer = indexer
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> PipelineEngine:
@@ -65,10 +68,14 @@ class PipelineEngine:
         extractor = build_extractor(self.config.extract)
         chunker = build_chunker(self.config.chunk)
         embedder = build_embedder(self.config.embed)
-        indexer = build_indexer(self.config.index) if self.config.index else None
+        indexer = self._indexer or (
+            build_indexer(self.config.index) if self.config.index else None
+        )
+        source_id = source_identity(self.config.source)
 
         documents = 0
         indexed = 0
+        current: dict[str, str] = {}
         try:
             artifacts = await source.fetch()
         except SourceError as exc:
@@ -78,6 +85,8 @@ class PipelineEngine:
 
         for artifact in artifacts:
             documents += 1
+            artifact_hash = content_hash(artifact)
+            current[artifact.uri] = artifact_hash
             try:
                 document: Document = await extractor.extract(artifact)
                 for chunk in await chunker.chunk(document):
@@ -85,10 +94,18 @@ class PipelineEngine:
                     if indexer is None:
                         continue
                     vector = await embedder.embed(chunk)
-                    await indexer.upsert(chunk, vector)
+                    await indexer.upsert(
+                        chunk,
+                        vector,
+                        source_id=source_id,
+                        artifact_hash=artifact_hash,
+                    )
             except (SourceError, ValueError) as exc:
                 raise PipelineError(
                     f"failed on artifact {artifact.uri}: {exc}"
                 ) from exc
+
+        if indexer is not None:
+            await indexer.reconcile(source_id, current)
 
         return PipelineResult(documents_ingested=documents, chunks_indexed=indexed)

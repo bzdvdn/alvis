@@ -36,6 +36,10 @@ docker compose down          # stop services
 The mock Confluence implements the `/rest/api` contract our adapter consumes
 (`docker/mock-confluence/`); swap its `url` for a real instance when ready.
 
+Re-running a pipeline is idempotent: chunk point IDs are deterministic, so
+identical content is overwritten, and a `reconcile` pass prunes points of
+changed or deleted documents (verified live against Qdrant: 6→6 on re-run).
+
 ## Documentation
 
 - [Constitution](CONSTITUTION.md) — purpose, scope, open-source strategy

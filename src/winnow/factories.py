@@ -17,6 +17,15 @@ from winnow.index import MemoryIndex, QdrantIndex
 from winnow.sources import ConfluenceSource, FilesystemSource
 
 
+def source_identity(config: SourceConfig) -> str:
+    """Stable identifier of a source for point namespacing in the index."""
+    if config.type == "fs":
+        return f"fs:{config.config.get('path', '')}"
+    if config.type == "confluence":
+        return f"confluence:{config.config.get('space', '')}@{config.config.get('url', '')}"
+    return config.type
+
+
 def build_source(config: SourceConfig) -> FilesystemSource | ConfluenceSource:
     if config.type == "fs":
         return FilesystemSource(**config.config)

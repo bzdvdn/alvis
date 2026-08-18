@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-import uuid
+from collections.abc import Mapping
 
+from winnow.core.ids import point_id
 from winnow.core.models import Chunk
 from winnow.sources.base import SourceError
 from winnow.sources.http import HttpClient
+
+_SCROLL_LIMIT = 100
 
 
 class QdrantIndex:
@@ -14,6 +17,9 @@ class QdrantIndex:
 
     Config keys: ``url`` (e.g. http://localhost:6333), ``collection``,
     ``api_token_env`` (optional). Distance is fixed to Cosine.
+
+    Point IDs are deterministic (``uuid5`` of source URI + text), so re-runs
+    overwrite instead of duplicating; ``reconcile`` prunes stale points.
     """
 
     def __init__(
@@ -28,14 +34,23 @@ class QdrantIndex:
             api_token_env=api_token_env,
         )
 
-    async def upsert(self, chunk: Chunk, vector: list[float]) -> None:
+    async def upsert(
+        self,
+        chunk: Chunk,
+        vector: list[float],
+        *,
+        source_id: str,
+        artifact_hash: str,
+    ) -> None:
         await self._ensure_collection(len(vector))
         point = {
-            "id": str(uuid.uuid4()),
+            "id": str(point_id(chunk.source_uri, chunk.text)),
             "vector": vector,
             "payload": {
                 "text": chunk.text,
                 "source_uri": chunk.source_uri,
+                "_source": source_id,
+                "artifact_hash": artifact_hash,
                 **chunk.metadata,
             },
         }
@@ -45,6 +60,47 @@ class QdrantIndex:
             query={"wait": "true"},
             payload={"points": [point]},
         )
+
+    async def reconcile(
+        self,
+        source_id: str,
+        current: Mapping[str, str],
+    ) -> None:
+        filter_payload = {
+            "must": [{"key": "_source", "match": {"value": source_id}}]
+        }
+        stale_ids: list[str] = []
+        offset: str | None = None
+        while True:
+            scroll: dict[str, object] = {
+                "filter": filter_payload,
+                "limit": _SCROLL_LIMIT,
+                "with_payload": True,
+            }
+            if offset:
+                scroll["offset"] = offset
+            page = await self.client.request(
+                "POST",
+                f"/collections/{self.collection}/points/scroll",
+                payload=scroll,
+            )
+            result = page.get("result", {})
+            for point in result.get("points", []):
+                payload = point.get("payload", {})
+                uri = payload.get("source_uri")
+                hash_value = payload.get("artifact_hash")
+                if uri not in current or current[uri] != hash_value:
+                    stale_ids.append(point["id"])
+            offset = result.get("next_page_offset")
+            if not offset or not result.get("points"):
+                break
+
+        if stale_ids:
+            await self.client.request(
+                "POST",
+                f"/collections/{self.collection}/points/delete",
+                payload={"points": stale_ids},
+            )
 
     async def _ensure_collection(self, dimensions: int) -> None:
         if await self._collection_exists():
