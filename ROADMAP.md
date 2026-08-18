@@ -24,6 +24,7 @@ Goal: a runnable skeleton with a real hello-world path (Confluence → Qdrant) d
 - [x] docker-compose dev environment (mock Confluence + real Qdrant); e2e verified
 - [x] MinIO in docker-compose (seeded `winnow` bucket) — live-verified S3 source
 - [x] Programmatic API (`winnow.run/run_async/run_many/run_many_async`) + CLI multi-config parallel runs (`--parallel`)
+- [x] Typed Python DSL (`winnow.dsl`) — same config contract as YAML, parity tested
 
 **Done when:** `pip install -e . && winnow init && winnow run --config examples/confluence.yaml` produces a non-empty Qdrant collection, end-to-end, with zero manual Python. (Met: see examples/confluence-qdrant.yaml + docker-compose.)
 

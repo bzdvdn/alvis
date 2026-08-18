@@ -102,6 +102,37 @@ index adapters (no shared mutable state). If multiple pipelines write to the
 same Qdrant collection, give them distinct collections or source identities so
 the per-source `reconcile` pass does not prune each other's points.
 
+## Describing pipelines in Python
+
+YAML is for the no-code UI; a thin typed DSL ("no config strings") builds the
+exact same config objects, so a Python pipeline validates, dry-runs, and runs
+identically to its YAML twin:
+
+```python
+from winnow import dsl, run
+
+cfg = dsl.pipeline(
+    dsl.s3(
+        url="http://localhost:9000",
+        bucket="winnow",
+        access_key_env="MINIO_ACCESS_KEY",
+        secret_key_env="MINIO_SECRET_KEY",
+        prefix="docs",
+        exclude_globs=["**/*.mp4"],
+    ),
+    chunk=dsl.chunk(max_tokens=80),
+    index=dsl.qdrant(url="http://localhost:6333", collection="winnow-s3"),
+)
+run(cfg)                              # sync, handles its own event loop
+await run_async(cfg)                  # or inside your own async app
+```
+
+Stage builders mirror the YAML schema: `dsl.fs`, `dsl.confluence`,
+`dsl.github`, `dsl.gitlab` (self-hosted via `url`), `dsl.s3`,
+`dsl.extract`, `dsl.chunk`, `dsl.embed`, `dsl.qdrant`, `dsl.memory`.
+Defaults are omitted from the underlying config, and `pipeline(...)`
+accepts only the stages you want to override.
+
 Re-running a pipeline is idempotent: chunk point IDs are deterministic, so
 identical content is overwritten, and a `reconcile` pass prunes points of
 changed or deleted documents (verified live against Qdrant: 6→6 on re-run).
