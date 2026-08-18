@@ -1,0 +1,18 @@
+pipeline:
+  source:
+    type: s3
+    config:
+      url: http://localhost:9000
+      bucket: winnow
+      access_key_env: MINIO_ACCESS_KEY
+      secret_key_env: MINIO_SECRET_KEY
+  embed:
+    type: default
+  chunk:
+    config:
+      max_tokens: 80
+  index:
+    type: qdrant
+    config:
+      url: http://localhost:6333
+      collection: winnow-s3

@@ -10,7 +10,9 @@ from winnow.sources import FilesystemSource, SourceError
 
 
 async def test_pipeline_end_to_end(tmp_path: Path) -> None:
-    doc = tmp_path / "guide.md"
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    doc = docs / "guide.md"
     doc.write_text(
         "# Guide\n\nIntroduction here.\n\n## Part 1\n\nBody of part one.\n",
         encoding="utf-8",
@@ -21,7 +23,7 @@ async def test_pipeline_end_to_end(tmp_path: Path) -> None:
         "  source:\n"
         "    type: fs\n"
         "    config:\n"
-        f"      path: {tmp_path}\n"
+        f"      path: {docs}\n"
         "  chunk:\n"
         "    config:\n"
         "      max_tokens: 20\n"

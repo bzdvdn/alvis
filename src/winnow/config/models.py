@@ -19,7 +19,7 @@ class _Stage(BaseModel):
 
 
 class SourceConfig(_Stage):
-    """A source adapter (Confluence, GitLab, S3...)."""
+    """A source adapter (filesystem, Confluence, GitHub, GitLab, S3...)."""
 
     type: str
     config: dict[str, Any] = Field(default_factory=dict)

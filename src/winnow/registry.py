@@ -6,7 +6,7 @@ Plugin registration (v1.1) will extend these sets dynamically.
 
 from __future__ import annotations
 
-KNOWN_SOURCES: set[str] = {"fs", "confluence", "gitlab", "s3"}
+KNOWN_SOURCES: set[str] = {"fs", "confluence", "github", "gitlab", "s3"}
 KNOWN_EXTRACT_STRATEGIES: set[str] = {"auto"}
 KNOWN_CHUNK_STRATEGIES: set[str] = {"auto"}
 KNOWN_EMBEDDERS: set[str] = {"default"}

@@ -22,6 +22,7 @@ Goal: a runnable skeleton with a real hello-world path (Confluence → Qdrant) d
 - [x] Hello-world example in `examples/` + e2e smoke test (fs → memory)
 - [x] CI: lint (ruff), typecheck (mypy), tests (pytest) — GitHub Actions
 - [x] docker-compose dev environment (mock Confluence + real Qdrant); e2e verified
+- [x] MinIO in docker-compose (seeded `winnow` bucket) — live-verified S3 source
 
 **Done when:** `pip install -e . && winnow init && winnow run --config examples/confluence.yaml` produces a non-empty Qdrant collection, end-to-end, with zero manual Python. (Met: see examples/confluence-qdrant.yaml + docker-compose.)
 
@@ -49,7 +50,7 @@ Goal: freeze the public contract — Canonical Content Tree v1 + YAML schema v1.
 - [ ] Memory-safe handling of large PDF/DOCX/XLSX (async + streaming)
 - [x] Idempotent ingestion: deterministic point IDs (uuid5), per-source reconcile pass, dedup by content hash — live-verified (re-run 6→6, change/delete prune)
 - [x] Retries in HttpClient: 429/5xx/network, exponential backoff + jitter, Retry-After; `retries`/`retry_backoff`/`verify` config — live-verified (survived Qdrant outage)
-- [ ] Sources: GitLab, S3
+- [x] Sources: GitHub, GitLab (self-hosted via `url`), S3 (SigV4, no boto3; MinIO-compatible) — include/exclude globs + prefix/path scoping; live-verified against MinIO (videos excluded, idempotent re-run)
 - [ ] Indexes: PostgreSQL/pgvector
 - [ ] Embedding abstraction: model-agnostic, batching + caching
 - [ ] CLI: config validation reports, pipeline dry-run graph

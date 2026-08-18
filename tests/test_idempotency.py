@@ -11,12 +11,13 @@ _CHANGED = "# Guide\n\nIntroduction here.\n\n## Part 1\n\nCompletely new body.\n
 
 
 def _config(tmp_path: Path) -> str:
+    docs = tmp_path / "docs"
     return (
         "pipeline:\n"
         "  source:\n"
         "    type: fs\n"
         "    config:\n"
-        f"      path: {tmp_path}\n"
+        f"      path: {docs}\n"
         "  chunk:\n"
         "    config:\n"
         "      max_tokens: 50\n"
@@ -25,8 +26,14 @@ def _config(tmp_path: Path) -> str:
     )
 
 
+def _docs(tmp_path: Path) -> Path:
+    docs = tmp_path / "docs"
+    docs.mkdir(exist_ok=True)
+    return docs
+
+
 async def test_rerun_is_idempotent(tmp_path: Path) -> None:
-    doc = tmp_path / "guide.md"
+    doc = _docs(tmp_path) / "guide.md"
     doc.write_text(_ORIGINAL, encoding="utf-8")
     config = tmp_path / "p.yaml"
     config.write_text(_config(tmp_path), encoding="utf-8")
@@ -42,7 +49,7 @@ async def test_rerun_is_idempotent(tmp_path: Path) -> None:
 
 
 async def test_changed_document_replaces_not_duplicates(tmp_path: Path) -> None:
-    doc = tmp_path / "guide.md"
+    doc = _docs(tmp_path) / "guide.md"
     doc.write_text(_ORIGINAL, encoding="utf-8")
     config = tmp_path / "p.yaml"
     config.write_text(_config(tmp_path), encoding="utf-8")
@@ -62,7 +69,7 @@ async def test_changed_document_replaces_not_duplicates(tmp_path: Path) -> None:
 
 
 async def test_deleted_document_is_pruned(tmp_path: Path) -> None:
-    doc = tmp_path / "guide.md"
+    doc = _docs(tmp_path) / "guide.md"
     doc.write_text(_ORIGINAL, encoding="utf-8")
     config = tmp_path / "p.yaml"
     config.write_text(_config(tmp_path), encoding="utf-8")

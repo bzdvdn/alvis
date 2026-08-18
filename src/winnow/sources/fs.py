@@ -7,8 +7,8 @@ from pathlib import Path
 
 from winnow.core.models import Artifact
 from winnow.sources.base import SourceError
-
-_TEXT_EXTENSIONS = {".txt", ".md", ".markdown"}
+from winnow.sources.content_types import TEXT_EXTENSIONS
+from winnow.sources.content_types import content_type as ct_from_path
 
 
 class FilesystemSource:
@@ -30,7 +30,7 @@ class FilesystemSource:
                 Artifact(
                     step_id=str(file_path),
                     uri=str(file_path.resolve()),
-                    content_type=_content_type(file_path),
+                    content_type=ct_from_path(file_path),
                     data=data,
                     metadata={"path": str(file_path), "title": file_path.stem},
                 )
@@ -48,14 +48,5 @@ class FilesystemSource:
         except OSError as exc:
             raise SourceError(f"failed to scan {self.root}: {exc}") from exc
         if self.pattern is None:
-            files = [p for p in files if p.suffix.lower() in _TEXT_EXTENSIONS]
+            files = [p for p in files if p.suffix.lower() in TEXT_EXTENSIONS]
         return files
-
-
-def _content_type(file_path: Path) -> str:
-    suffix = file_path.suffix.lower()
-    if suffix in {".md", ".markdown"}:
-        return "text/markdown"
-    if suffix == ".html":
-        return "text/html"
-    return "text/plain"

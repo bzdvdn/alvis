@@ -14,7 +14,14 @@ from winnow.config.models import (
 from winnow.embed import HashEmbedder
 from winnow.extract import AutoExtractor
 from winnow.index import MemoryIndex, QdrantIndex
-from winnow.sources import ConfluenceSource, FilesystemSource
+from winnow.registry import KNOWN_SOURCES
+from winnow.sources import (
+    ConfluenceSource,
+    FilesystemSource,
+    GitHubSource,
+    GitLabSource,
+    S3Source,
+)
 
 
 def source_identity(config: SourceConfig) -> str:
@@ -23,17 +30,35 @@ def source_identity(config: SourceConfig) -> str:
         return f"fs:{config.config.get('path', '')}"
     if config.type == "confluence":
         return f"confluence:{config.config.get('space', '')}@{config.config.get('url', '')}"
+    if config.type == "github":
+        return f"github:{config.config.get('repo', '')}"
+    if config.type == "gitlab":
+        host = config.config.get("url", "https://gitlab.com")
+        return f"gitlab:{config.config.get('project', '')}@{host}"
+    if config.type == "s3":
+        return (
+            f"s3:{config.config.get('bucket', '')}"
+            f"@{config.config.get('url', '')}"
+        )
     return config.type
 
 
-def build_source(config: SourceConfig) -> FilesystemSource | ConfluenceSource:
+def build_source(
+    config: SourceConfig,
+) -> FilesystemSource | ConfluenceSource | GitHubSource | GitLabSource | S3Source:
     if config.type == "fs":
         return FilesystemSource(**config.config)
     if config.type == "confluence":
         return ConfluenceSource(**config.config)
+    if config.type == "github":
+        return GitHubSource(**config.config)
+    if config.type == "gitlab":
+        return GitLabSource(**config.config)
+    if config.type == "s3":
+        return S3Source(**config.config)
     raise ConfigError(
         f"source type {config.type!r} is not implemented in v0.1 "
-        f"(known: {'fs', 'confluence'})"
+        f"(known: {sorted(KNOWN_SOURCES)})"
     )
 
 

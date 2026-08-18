@@ -1,0 +1,8 @@
+MinIO quick start
+
+Spin up the stack: docker compose up -d
+
+The mc client creates the kb bucket and a couple of seed objects.
+
+Configure the pipeline with access_key_env / secret_key_env pointing at
+MINIO_ACCESS_KEY / MINIO_SECRET_KEY environment variables.

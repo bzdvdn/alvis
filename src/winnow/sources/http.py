@@ -5,22 +5,21 @@ from __future__ import annotations
 import asyncio
 import base64
 import os
-import random
 import time
-from typing import Any
+from collections.abc import Callable
+from typing import Any, Literal, overload
 
 import httpx
 
 from winnow.sources.base import SourceError
-
-_RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+from winnow.transport import RETRYABLE_STATUS, backoff_delay
 
 
 class HttpClient:
     """A thin JSON client shared by REST adapters (httpx + async).
 
     Transient failures are retried with exponential backoff and jitter:
-    connection errors and status codes in ``_RETRYABLE_STATUS`` (429, 5xx).
+    connection errors and status codes in ``RETRYABLE_STATUS`` (429, 5xx).
     ``Retry-After`` is honored when present. All requests Winnow issues are
     idempotent, so retrying is safe.
     """
@@ -36,6 +35,7 @@ class HttpClient:
         retry_backoff: float = 1.0,
         verify: bool | str = True,
         transport: httpx.AsyncBaseTransport | None = None,
+        header_hook: Callable[[str, str, dict[str, Any] | None], dict[str, str]] | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_token_env = api_token_env
@@ -45,8 +45,9 @@ class HttpClient:
         self.retry_backoff = retry_backoff
         self.verify = verify
         self.transport = transport
+        self.header_hook = header_hook
 
-    def _headers(self) -> dict[str, str]:
+    def _headers(self, method: str, path: str, query: dict[str, Any] | None) -> dict[str, str]:
         headers = {"Accept": "application/json"}
         if self.api_token_env:
             token = os.environ.get(self.api_token_env)
@@ -62,7 +63,33 @@ class HttpClient:
                 headers["Authorization"] = f"Basic {credentials}"
             else:
                 headers["Authorization"] = f"Bearer {token}"
+        if self.header_hook:
+            headers.update(self.header_hook(method, path, query))
         return headers
+
+    @overload
+    async def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        query: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+        ok_status: tuple[int, ...] = (200, 201),
+        raw: Literal[False] = False,
+    ) -> dict[str, Any]: ...
+
+    @overload
+    async def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        query: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+        ok_status: tuple[int, ...] = (200, 201),
+        raw: Literal[True],
+    ) -> bytes: ...
 
     async def request(
         self,
@@ -72,7 +99,8 @@ class HttpClient:
         query: dict[str, Any] | None = None,
         payload: dict[str, Any] | None = None,
         ok_status: tuple[int, ...] = (200, 201),
-    ) -> dict[str, Any]:
+        raw: bool = False,
+    ) -> dict[str, Any] | bytes:
         url = self.base_url + path
         async with self._client() as client:
             for attempt in range(self.max_retries + 1):
@@ -82,7 +110,7 @@ class HttpClient:
                         url,
                         params=query,
                         json=payload,
-                        headers=self._headers(),
+                        headers=self._headers(method, path, query),
                         timeout=self.timeout,
                     )
                 except httpx.RequestError as exc:
@@ -93,7 +121,7 @@ class HttpClient:
                     await asyncio.sleep(self._delay(attempt, None, None))
                     continue
 
-                if resp.status_code in _RETRYABLE_STATUS:
+                if resp.status_code in RETRYABLE_STATUS:
                     if attempt >= self.max_retries:
                         raise SourceError(
                             f"{method} {url} returned HTTP {resp.status_code} "
@@ -114,9 +142,11 @@ class HttpClient:
                         f"{method} {url} returned HTTP {resp.status_code}",
                         status_code=resp.status_code,
                     )
+                if raw:
+                    return resp.content
                 return resp.json() if resp.content else {}
 
-        return {}
+        return b"" if raw else {}
 
     def _delay(self, attempt: int, status: int | None, retry_after: str | None) -> float:
         if retry_after:
@@ -128,8 +158,7 @@ class HttpClient:
                 parsed = email.utils.parsedate(retry_after)
                 if parsed:
                     return max(0.0, time.mktime(parsed) - time.time())
-        base = self.retry_backoff * float(2**attempt)
-        return base + random.uniform(0.0, self.retry_backoff)
+        return backoff_delay(attempt, self.retry_backoff)
 
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(transport=self.transport, verify=self.verify)
