@@ -74,6 +74,23 @@ class SearchHit(BaseModel):
     score: float
 
 
+class DocumentMeta(BaseModel):
+    """Cheap listing metadata of a document, before its body is fetched.
+
+    ``fingerprint`` identifies the document's current state from listing data
+    alone (S3 ETag, GitLab/GitHub blob sha, Confluence version, local file
+    hash). Incremental ingestion compares it against the docstore to skip
+    downloading unchanged documents.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    uri: str
+    step_id: str
+    fingerprint: str
+    content_type: str | None = None
+
+
 def content_hash(artifact: Artifact) -> str:
     """Deterministic content hash used for dedup (v0.2+)."""
     return hashlib.sha256(artifact.data).hexdigest()

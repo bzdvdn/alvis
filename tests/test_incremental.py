@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from winnow import dsl, run_async
-from winnow.docstore import DocStore
+from winnow.docstore import DocEntry, DocStore
 from winnow.index import MemoryIndex
 from winnow.pipeline.engine import PipelineResult, pipeline_signature
 
@@ -39,23 +39,44 @@ async def _run(
 
 def test_docstore_roundtrip(tmp_path: Path) -> None:
     store = DocStore(tmp_path / "state.json")
-    assert store.fingerprint("fs:/x", "sig-1", "a.md") is None
+    assert store.entry("fs:/x", "sig-1", "a.md") is None
 
-    assert store.commit("fs:/x", "sig-1", {"a.md": "h1", "b.md": "h2"}) == 0
+    assert (
+        store.commit(
+            "fs:/x",
+            "sig-1",
+            {"a.md": DocEntry("h1", "e1"), "b.md": DocEntry("h2")},
+        )
+        == 0
+    )
     store.save()
 
     reloaded = DocStore(tmp_path / "state.json")
-    assert reloaded.fingerprint("fs:/x", "sig-1", "a.md") == "h1"
-    assert reloaded.fingerprint("fs:/x", "sig-1", "c.md") is None
-    assert reloaded.commit("fs:/x", "sig-2", {"a.md": "h1"}) == 1
+    assert reloaded.entry("fs:/x", "sig-1", "a.md") == DocEntry("h1", "e1")
+    assert reloaded.entry("fs:/x", "sig-1", "c.md") is None
+    assert reloaded.commit("fs:/x", "sig-2", {"a.md": DocEntry("h1")}) == 1
 
 
 def test_docstore_fingerprint_is_signature_scoped() -> None:
     store = DocStore(Path("does-not-exist.json"))
-    store.commit("s1", "sig-a", {"u": "h"})
-    assert store.fingerprint("s1", "sig-a", "u") == "h"
-    assert store.fingerprint("s1", "sig-b", "u") is None
-    assert store.fingerprint("s2", "sig-a", "u") is None
+    store.commit("s1", "sig-a", {"u": DocEntry("h")})
+    assert store.entry("s1", "sig-a", "u") == DocEntry("h")
+    assert store.entry("s1", "sig-b", "u") is None
+    assert store.entry("s2", "sig-a", "u") is None
+
+
+def test_docstore_migrates_legacy_content_only_entries(tmp_path: Path) -> None:
+    state = tmp_path / "state.json"
+    state.write_text(
+        '{"version": 1, "sources": {"s1": '
+        '{"signature": "sig-a", "documents": {"u": "hash1"}}}}',
+        encoding="utf-8",
+    )
+    store = DocStore(state)
+    entry = store.entry("s1", "sig-a", "u")
+    assert entry is not None
+    assert entry.content == "hash1"
+    assert entry.listing is None
 
 
 def test_pipeline_signature_distinguishes_chunk_settings() -> None:

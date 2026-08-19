@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from winnow.config import ConfigError, PipelineConfig, load_config
-from winnow.core.models import Chunk, Document, content_hash
-from winnow.docstore import DocStore
+from winnow.core.models import Chunk, Document, DocumentMeta, content_hash
+from winnow.docstore import DocEntry, DocStore
 from winnow.errors import PipelineError
 from winnow.factories import (
     build_chunker,
@@ -155,9 +155,10 @@ class PipelineEngine:
     async def run(self, *, docstore: DocStore | None = None) -> PipelineResult:
         """Execute the configured pipeline: source → extract → chunk → embed → index.
 
-        With a ``docstore``, documents whose content fingerprint is unchanged
-        since the last successful run are skipped (no extract/chunk/embed/
-        upsert). State is committed only after the run succeeds.
+        With a ``docstore``, unchanged documents are skipped. When the source
+        supports cheap listing (``list_documents``), their bodies are not even
+        downloaded; otherwise bodies are fetched and compared by content hash.
+        State is committed only after the run succeeds.
         """
         problems = check_pipeline_supported(
             source=self.config.source.type,
@@ -181,6 +182,8 @@ class PipelineEngine:
         )
         source_id = source_identity(self.config.source)
         signature = pipeline_signature(self.config) if docstore is not None else None
+        list_documents = getattr(source, "list_documents", None)
+        use_listing = docstore is not None and list_documents is not None
 
         documents = 0
         indexed = 0
@@ -188,27 +191,59 @@ class PipelineEngine:
         skipped = 0
         deleted = 0
         current: dict[str, str] = {}
+        entries: dict[str, DocEntry] = {}
         pending: list[tuple[Chunk, str]] = []
+        use_listing = False
+        uri_by_meta: dict[str, DocumentMeta] = {}
+
         try:
-            artifacts = await source.fetch()
+            if docstore is not None and signature is not None and list_documents is not None:
+                use_listing = True
+                metas = await list_documents()
+                uri_by_meta = {meta.uri: meta for meta in metas}
+                wanted: set[str] = set()
+                for meta in metas:
+                    documents += 1
+                    stored = docstore.entry(source_id, signature, meta.uri)
+                    if (
+                        stored is not None
+                        and stored.listing is not None
+                        and stored.listing == meta.fingerprint
+                    ):
+                        skipped += 1
+                        current[meta.uri] = stored.content
+                        entries[meta.uri] = stored
+                    else:
+                        changed += 1
+                        wanted.add(meta.uri)
+                artifacts = await source.fetch(uris=wanted) if wanted else []
+            else:
+                artifacts = await source.fetch()
         except SourceError as exc:
             raise PipelineError(
                 f"source '{self.config.source.type}' failed: {exc}"
             ) from exc
 
         for artifact in artifacts:
-            documents += 1
             artifact_hash = content_hash(artifact)
             current[artifact.uri] = artifact_hash
-            if (
-                docstore is not None
-                and signature is not None
-                and docstore.fingerprint(source_id, signature, artifact.uri)
-                == artifact_hash
-            ):
-                skipped += 1
-                continue
-            changed += 1
+            if not use_listing:
+                documents += 1
+                stored = (
+                    docstore.entry(source_id, signature, artifact.uri)
+                    if docstore is not None and signature is not None
+                    else None
+                )
+                if stored is not None and stored.content == artifact_hash:
+                    skipped += 1
+                    entries[artifact.uri] = DocEntry(content=artifact_hash)
+                    continue
+                changed += 1
+            meta = uri_by_meta.get(artifact.uri)
+            entries[artifact.uri] = DocEntry(
+                content=artifact_hash,
+                listing=meta.fingerprint if meta is not None else None,
+            )
             try:
                 document: Document = await extractor.extract(artifact)
                 for chunk in await chunker.chunk(document):
@@ -242,7 +277,7 @@ class PipelineEngine:
             await indexer.reconcile(source_id, current)
 
         if docstore is not None and signature is not None:
-            deleted = docstore.commit(source_id, signature, current)
+            deleted = docstore.commit(source_id, signature, entries)
             docstore.save()
 
         return PipelineResult(

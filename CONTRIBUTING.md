@@ -57,6 +57,28 @@ class Source(Protocol):
 `fetch()` either returns artifacts or raises `SourceError`
 (`winnow.sources.base`) with an optional `status_code`.
 
+**Optional: cheap listing (recommended).** If your source can fingerprint a
+document without downloading its body — an S3 ETag, a GitLab/GitHub blob sha, a
+Confluence page version — also implement `ListingSource`
+(`winnow.sources.base`):
+
+```python
+class ListingSource(Source, Protocol):
+    async def list_documents(self) -> list[DocumentMeta]: ...
+    async def fetch(self, *, uris: set[str] | None = None) -> list[Artifact]: ...
+```
+
+- `list_documents()` returns a `DocumentMeta` (`uri`, `step_id`, `content_type`,
+  `fingerprint`) per document, doing **only** the cheap scan call(s).
+- `fetch(uris=...)` must download **only** the requested URIs — `uris=None`
+  means "everything". The engine's `--incremental` mode lists first, skips
+  documents whose stored fingerprint already matches, and calls
+  `fetch(uris=...)` with just the wanted URIs, so unchanged remote objects are
+  never fetched. A connector that skips this interface falls back to
+  content-hash fingerprinting (still skips processing, not downloads).
+- `gitlab.py` / `github.py` / `s3.py` / `confluence.py` are complete
+  `ListingSource` examples.
+
 ### 2. Layout and naming
 
 Look at how the built-ins are organised — each adapter is one small module:

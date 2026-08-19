@@ -12,7 +12,7 @@ from urllib.parse import quote
 
 import httpx
 
-from winnow.core.models import Artifact
+from winnow.core.models import Artifact, DocumentMeta
 from winnow.sources.base import SourceError
 from winnow.sources.content_types import content_type, is_ingestible, matches_globs
 from winnow.sources.http import HttpClient
@@ -171,11 +171,33 @@ class S3Source:
             max_bytes=max_bytes,
         )
 
-    async def fetch(self) -> list[Artifact]:
-        """List the bucket and fetch the wanted text objects as artifacts."""
-        artifacts: list[Artifact] = []
-        for key in await self._list_keys():
+    async def list_documents(self) -> list[DocumentMeta]:
+        """Fingerprint objects from the listing (ETag, no body download)."""
+        metas: list[DocumentMeta] = []
+        for key, etag, size in await self._list_objects():
             if not self._wanted(key):
+                continue
+            metas.append(
+                DocumentMeta(
+                    uri=_object_uri(self.client.base_url, self.bucket, key),
+                    step_id=_sha256(f"{self.bucket}/{key}".encode()),
+                    fingerprint=etag or f"size:{size}",
+                    content_type=content_type(key),
+                )
+            )
+        return metas
+
+    async def fetch(self, *, uris: set[str] | None = None) -> list[Artifact]:
+        """List the bucket and fetch the wanted text objects as artifacts.
+
+        With ``uris``, only the given object URIs are downloaded.
+        """
+        artifacts: list[Artifact] = []
+        for key, _, _ in await self._list_objects():
+            if not self._wanted(key):
+                continue
+            uri = _object_uri(self.client.base_url, self.bucket, key)
+            if uris is not None and uri not in uris:
                 continue
             try:
                 blob = await self.client.request(
@@ -191,7 +213,7 @@ class S3Source:
             artifacts.append(
                 Artifact(
                     step_id=_sha256(f"{self.bucket}/{key}".encode()),
-                    uri=f"{self.client.base_url}/{self.bucket}/{key}",
+                    uri=uri,
                     content_type=content_type(key),
                     data=blob,
                     metadata={
@@ -203,8 +225,8 @@ class S3Source:
             )
         return artifacts
 
-    async def _list_keys(self) -> list[str]:
-        keys: list[str] = []
+    async def _list_objects(self) -> list[tuple[str, str, str]]:
+        objects: list[tuple[str, str, str]] = []
         token: str | None = None
         while True:
             query: dict[str, str] = {"list-type": "2"}
@@ -220,14 +242,15 @@ class S3Source:
                 raw=True,
             )
             root = ET.fromstring(resp)
-            keys.extend(
-                child.findtext(f"{_S3_XML}Key") or ""
-                for child in root.iter(f"{_S3_XML}Contents")
-            )
+            for child in root.iter(f"{_S3_XML}Contents"):
+                key = child.findtext(f"{_S3_XML}Key") or ""
+                etag = child.findtext(f"{_S3_XML}ETag") or ""
+                size = child.findtext(f"{_S3_XML}Size") or "0"
+                objects.append((key, etag.strip('"'), size))
             if root.findtext(f"{_S3_XML}IsTruncated") != "true":
                 break
             token = root.findtext(f"{_S3_XML}NextContinuationToken")
-        return keys
+        return objects
 
     def _wanted(self, key: str) -> bool:
         if matches_globs(self.exclude_globs, key):
@@ -235,3 +258,7 @@ class S3Source:
         if self.include_globs is not None:
             return matches_globs(self.include_globs, key)
         return is_ingestible(key)
+
+
+def _object_uri(base_url: str, bucket: str, key: str) -> str:
+    return f"{base_url}/{bucket}/{key}"

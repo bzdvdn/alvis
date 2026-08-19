@@ -7,7 +7,7 @@ from urllib.parse import quote
 
 import httpx
 
-from winnow.core.models import Artifact
+from winnow.core.models import Artifact, DocumentMeta
 from winnow.sources.base import SourceError
 from winnow.sources.content_types import content_type, is_ingestible, matches_globs
 from winnow.sources.http import HttpClient
@@ -65,12 +65,28 @@ class GitLabSource:
             max_bytes=max_bytes,
         )
 
-    async def fetch(self) -> list[Artifact]:
-        """Fetch the project's wanted text blobs as artifacts."""
+    async def list_documents(self) -> list[DocumentMeta]:
+        """Fingerprint blobs from the tree listing (blob sha, no download)."""
+        return [
+            DocumentMeta(
+                uri=_blob_uri(self.web_base, self.project_web, self.branch, item["path"]),
+                step_id=item["id"],
+                fingerprint=item["id"],
+                content_type=content_type(item["path"]),
+            )
+            for item in await self._tree_items()
+        ]
+
+    async def fetch(self, *, uris: set[str] | None = None) -> list[Artifact]:
+        """Fetch the project's wanted text blobs as artifacts.
+
+        With ``uris``, only the given blob URIs are downloaded.
+        """
         artifacts: list[Artifact] = []
-        for item in await self._iter_tree():
+        for item in await self._tree_items():
             file_path = item["path"]
-            if not self._wanted(file_path):
+            uri = _blob_uri(self.web_base, self.project_web, self.branch, file_path)
+            if uris is not None and uri not in uris:
                 continue
             try:
                 blob = await self.client.request(
@@ -86,8 +102,7 @@ class GitLabSource:
             artifacts.append(
                 Artifact(
                     step_id=item["id"],
-                    uri=f"{self.web_base}/{self.project_web}/-/blob/"
-                    f"{quote(self.branch)}/{file_path}",
+                    uri=uri,
                     content_type=content_type(file_path),
                     data=blob,
                     metadata={
@@ -97,6 +112,15 @@ class GitLabSource:
                 )
             )
         return artifacts
+
+    async def _tree_items(self) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for item in await self._iter_tree():
+            file_path = str(item["path"])
+            if not self._wanted(file_path):
+                continue
+            items.append(item)
+        return items
 
     async def _iter_tree(self) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
@@ -126,3 +150,7 @@ class GitLabSource:
         if self.include_globs is not None:
             return matches_globs(self.include_globs, file_path)
         return is_ingestible(file_path)
+
+
+def _blob_uri(web_base: str, project_web: str, branch: str, file_path: str) -> str:
+    return f"{web_base}/{project_web}/-/blob/{quote(branch)}/{file_path}"

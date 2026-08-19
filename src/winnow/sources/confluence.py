@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from winnow.core.models import Artifact
+from typing import Any
+
+from winnow.core.models import Artifact, DocumentMeta
 from winnow.sources.http import HttpClient
 
 
@@ -36,20 +38,31 @@ class ConfluenceSource:
             verify=verify,
         )
 
-    async def fetch(self) -> list[Artifact]:
-        """Fetch all pages of the configured space as HTML artifacts."""
-        pages = await self.client.request(
-            "GET",
-            "/rest/api/content",
-            query={
-                "spaceKey": self.space,
-                "type": "page",
-                "limit": 500,
-            },
-        )
+    async def list_documents(self) -> list[DocumentMeta]:
+        """Fingerprint pages by their version number (no expanded bodies)."""
+        pages = await self._list_pages()
+        return [
+            DocumentMeta(
+                uri=page["_links"]["webui"],
+                step_id=page["id"],
+                fingerprint=f"v{page.get('version', {}).get('number', 0)}",
+                content_type="text/html",
+            )
+            for page in pages
+        ]
+
+    async def fetch(self, *, uris: set[str] | None = None) -> list[Artifact]:
+        """Fetch pages (expanded HTML bodies) as artifacts.
+
+        With ``uris``, only the given page webui URIs are expanded.
+        """
+        pages = await self._list_pages()
         artifacts: list[Artifact] = []
-        for page in pages.get("results", []):
+        for page in pages:
             page_id = page["id"]
+            uri = page["_links"]["webui"]
+            if uris is not None and uri not in uris:
+                continue
             expanded = await self.client.request(
                 "GET",
                 f"/rest/api/content/{page_id}",
@@ -61,7 +74,7 @@ class ConfluenceSource:
             artifacts.append(
                 Artifact(
                     step_id=page_id,
-                    uri=page["_links"]["webui"],
+                    uri=uri,
                     content_type="text/html",
                     data=body_html.encode("utf-8"),
                     metadata={
@@ -72,3 +85,15 @@ class ConfluenceSource:
                 )
             )
         return artifacts
+
+    async def _list_pages(self) -> list[dict[str, Any]]:
+        pages = await self.client.request(
+            "GET",
+            "/rest/api/content",
+            query={
+                "spaceKey": self.space,
+                "type": "page",
+                "limit": 500,
+            },
+        )
+        return list(pages.get("results", []))

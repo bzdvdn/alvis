@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import base64
+from typing import Any
 from urllib.parse import quote
 
 import httpx
 
-from winnow.core.models import Artifact
+from winnow.core.models import Artifact, DocumentMeta
 from winnow.sources.base import SourceError
 from winnow.sources.content_types import content_type, is_ingestible, matches_globs
 from winnow.sources.http import HttpClient
@@ -54,19 +55,28 @@ class GitHubSource:
             max_bytes=max_bytes,
         )
 
-    async def fetch(self) -> list[Artifact]:
-        """Fetch the repository's wanted text blobs as artifacts."""
-        tree = await self.client.request(
-            "GET",
-            f"/repos/{self.repo}/git/trees/{quote(self.branch)}",
-            query={"recursive": "1"},
-        )
+    async def list_documents(self) -> list[DocumentMeta]:
+        """Fingerprint blobs from the tree listing (blob sha, no download)."""
+        return [
+            DocumentMeta(
+                uri=_blob_uri(self.repo, self.branch, item["path"]),
+                step_id=item["sha"],
+                fingerprint=item["sha"],
+                content_type=content_type(item["path"]),
+            )
+            for item in await self._tree_items()
+        ]
+
+    async def fetch(self, *, uris: set[str] | None = None) -> list[Artifact]:
+        """Fetch the repository's wanted text blobs as artifacts.
+
+        With ``uris``, only the given blob URIs are downloaded.
+        """
         artifacts: list[Artifact] = []
-        for item in tree.get("tree", []):
-            if item.get("type") != "blob":
-                continue
+        for item in await self._tree_items():
             file_path = item["path"]
-            if not self._wanted(file_path):
+            uri = _blob_uri(self.repo, self.branch, file_path)
+            if uris is not None and uri not in uris:
                 continue
             try:
                 info = await self.client.request(
@@ -81,7 +91,7 @@ class GitHubSource:
             artifacts.append(
                 Artifact(
                     step_id=item["sha"],
-                    uri=f"https://github.com/{self.repo}/blob/{quote(self.branch)}/{file_path}",
+                    uri=uri,
                     content_type=content_type(file_path),
                     data=data,
                     metadata={
@@ -93,6 +103,22 @@ class GitHubSource:
             )
         return artifacts
 
+    async def _tree_items(self) -> list[dict[str, Any]]:
+        tree = await self.client.request(
+            "GET",
+            f"/repos/{self.repo}/git/trees/{quote(self.branch)}",
+            query={"recursive": "1"},
+        )
+        items: list[dict[str, Any]] = []
+        for item in tree.get("tree", []):
+            if item.get("type") != "blob":
+                continue
+            file_path = str(item["path"])
+            if not self._wanted(file_path):
+                continue
+            items.append(item)
+        return items
+
     def _wanted(self, file_path: str) -> bool:
         if self.path and not file_path.startswith(self.path):
             return False
@@ -101,3 +127,7 @@ class GitHubSource:
         if self.include_globs is not None:
             return matches_globs(self.include_globs, file_path)
         return is_ingestible(file_path)
+
+
+def _blob_uri(repo: str, branch: str, file_path: str) -> str:
+    return f"https://github.com/{repo}/blob/{quote(branch)}/{file_path}"

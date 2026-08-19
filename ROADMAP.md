@@ -63,7 +63,7 @@ Goal: re-runs stop being full re-ingests. Content that didn't change is skipped 
 
 - [x] DocStore: per-source document state (uri → content fingerprint) keyed by pipeline signature (extract/chunk/embed settings), committed atomically only after a successful run
 - [x] Skip unchanged documents in the engine (no extract/chunk/embed/upsert); reconcile still keeps their points; delta stats (`changed/skipped/deleted`) in `PipelineResult` + CLI `winnow run --incremental [--state]`
-- [ ] Phase 2: cheap listing fingerprints from connectors (S3 ETag, GitLab/GitHub blob sha, Confluence version) to skip downloads, not just processing
+- [x] Phase 2 — cheap listing fingerprints for all sources: `DocumentMeta` + optional `ListingSource` interface (`list_documents()`, `fetch(uris=...)`); S3 ETag/size, GitLab/GitHub blob sha, Confluence version, fs content hash → unchanged remote objects are not downloaded at all
 - [ ] Change-triggered ingestion (git push hook / scheduler) — the `--incremental` run is the primitive they call
 
 **Done when:** a second run of an unchanged corpus ingests zero chunks; a one-file edit ingests exactly that file.

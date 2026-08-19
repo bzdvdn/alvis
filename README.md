@@ -329,9 +329,12 @@ run("pipeline.yaml", incremental=True)                    # or state_path="..."
 await run_async(cfg, incremental=True, state_path=".winnow/state.json")
 ```
 
-Phase 1 skips processing; downloads still happen. Phase 2 will let connectors
-report a cheap listing fingerprint (S3 ETag, GitLab/GitHub blob sha, Confluence
-version) so unchanged remote objects aren't even fetched.
+Phase 1 skips *processing*; Phase 2 skips *downloading* too. Connectors
+fingerprint documents from listing data alone — S3 ETag (size fallback),
+GitLab/GitHub blob sha, Confluence version — so unchanged remote objects are
+never fetched; the filesystem source hashes files locally. A second run of an
+unchanged 12-document source therefore does zero extraction, chunking, and
+embedding.
 
 Transient failures are retried (429/5xx/connection issues) with exponential
 backoff and jitter; `Retry-After` is honored. Per-source/index config accepts
