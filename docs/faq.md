@@ -55,6 +55,16 @@ reference is `examples/kb-plugin`). After `pip install`, `winnow plugins`
 lists it and `winnow run`/`validate` accept its type string — no fork, no core
 change.
 
+## How do I monitor what ingestion is doing?
+
+Structured logs, metrics, and (optionally) traces — see
+[docs/observability.md](observability.md). `winnow run --log-json --log-level
+info pipeline.yaml` renders every per-run event as one JSON line; the
+process-wide metrics store counts runs/documents/chunks plus latency
+histograms per stage, exportable as Prometheus text with
+`winnow[observability]` installed. No extra dependency is required for the
+basic in-process store.
+
 ## Which index should I pick?
 
 - `memory` — tests and prototypes.

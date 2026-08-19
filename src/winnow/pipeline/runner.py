@@ -18,6 +18,7 @@ collections to avoid reconcile races.
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import AsyncIterator, Iterable
 from pathlib import Path
 
@@ -26,8 +27,9 @@ from winnow.config import ConfigError, PipelineConfig, load_config
 from winnow.core.models import Chunk, SearchHit
 from winnow.docstore import DocStore
 from winnow.errors import PipelineError
-from winnow.factories import build_embedder, build_indexer
+from winnow.factories import build_embedder, build_indexer, source_identity
 from winnow.index.base import Indexer
+from winnow.observability import LOG
 from winnow.pipeline.engine import PipelineEngine, PipelineResult
 from winnow.sources.base import SourceError
 
@@ -251,5 +253,33 @@ async def watch_async(
     docstore_path = Path(state_path) if state_path else DocStore.default_path()
 
     while True:
-        yield await _tick_once(engines, docstore_path, semaphore)
+        tick_started = time.monotonic()
+        tick = await _tick_once(engines, docstore_path, semaphore)
+        tick_seconds = time.monotonic() - tick_started
+        for config, result in zip(pipelines, tick, strict=True):
+            if isinstance(result, BaseException):
+                LOG.error(
+                    "watch.tick_failed",
+                    extra={"config": _label(config), "error": str(result)},
+                )
+            else:
+                LOG.info(
+                    "watch.tick",
+                    extra={
+                        "config": _label(config),
+                        "tick_s": round(tick_seconds, 4),
+                        "documents": result.documents_ingested,
+                        "chunks": result.chunks_indexed,
+                        "changed": result.documents_changed,
+                        "skipped": result.documents_skipped,
+                        "deleted": result.documents_deleted,
+                    },
+                )
+        yield tick
         await asyncio.sleep(interval)
+
+
+def _label(config: ConfigLike) -> str:
+    if isinstance(config, PipelineConfig):
+        return source_identity(config.source)
+    return str(config)

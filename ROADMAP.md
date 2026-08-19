@@ -102,7 +102,7 @@ Goal: Winnow maintains itself; the community drives breadth.
 
 - [ ] Stable plugin API (semver, deprecation window)
 - [ ] Managed/hosted offering evaluation (separate distribution, never a fork)
-- [ ] Production hardening: observability hooks (logging, metrics, traces)
+- [x] Observability hooks — structured logging (JSON/text via `setup_logging`), in-process metrics with optional Prometheus backing (`winnow[observability]`), optional OpenTelemetry spans, `--log-json`/`--log-level` on the CLI
 - [ ] Performance budget: p99 chunk+embed throughput targets
 
 ---

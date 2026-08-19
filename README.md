@@ -365,6 +365,7 @@ the latter only against trusted internal endpoints).
 - [FAQ](docs/faq.md) — short answers to common questions
 - [Contributing](CONTRIBUTING.md) — how to write a connector (cover page: connector fixture + golden tests)
 - [Plugin registry](docs/plugins.md) — built-in and community plugins (v1.1 SDK)
+- [Observability](docs/observability.md) — structured logging, metrics, tracing, Prometheus export
 - [Python DSL guide](docs/dsl.md) — describing pipelines from code
 - [Constitution](CONSTITUTION.md) — purpose, scope, open-source strategy
 - [Roadmap](ROADMAP.md) — build plan

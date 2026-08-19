@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import time
 from pathlib import Path
@@ -16,6 +17,7 @@ from winnow.config import ConfigError, load_config
 from winnow.core.models import CCT_SCHEMA_VERSION
 from winnow.docstore import DocStore
 from winnow.errors import PipelineError
+from winnow.observability import setup_logging
 from winnow.pipeline.engine import PipelineEngine, PipelineResult
 from winnow.pipeline.runner import answer_async, query_async
 from winnow.plugin import KINDS, discover_plugins
@@ -221,8 +223,23 @@ def run(
         "--interval",
         help="Seconds between watch ticks.",
     ),
+    log_json: bool = typer.Option(  # noqa: B008
+        False,
+        "--log-json",
+        help="Emit structured JSON logs to stderr (default: human text).",
+    ),
+    log_level: str = typer.Option(  # noqa: B008
+        "warning",
+        "--log-level",
+        help="Log verbosity: debug, info, warning or error.",
+    ),
 ) -> None:
     """Run the configured ingestion pipeline(s)."""
+    level = getattr(logging, log_level.upper(), None)
+    if not isinstance(level, int):
+        typer.echo(f"Error: unknown --log-level '{log_level}'", err=True)
+        raise typer.Exit(2)
+    setup_logging(level=level, json=log_json)
     if parallel < 1:
         typer.echo("Error: --parallel must be >= 1", err=True)
         raise typer.Exit(2)

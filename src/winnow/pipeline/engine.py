@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from winnow import observability as ob
 from winnow.config import ConfigError, PipelineConfig, load_config
 from winnow.core.models import Chunk, Document, DocumentMeta, content_hash
 from winnow.docstore import DocEntry, DocStore
@@ -153,6 +155,11 @@ class PipelineEngine:
             return f"{index.type} ({key}={value})"
         return index.type
 
+    @property
+    def _metric_labels(self) -> dict[str, str]:
+        index = self.config.index.type if self.config.index else "none"
+        return {"source": self.config.source.type, "index": index}
+
     async def run(self, *, docstore: DocStore | None = None) -> PipelineResult:
         """Execute the configured pipeline: source → extract → chunk → embed → index.
 
@@ -160,7 +167,66 @@ class PipelineEngine:
         supports cheap listing (``list_documents``), their bodies are not even
         downloaded; otherwise bodies are fetched and compared by content hash.
         State is committed only after the run succeeds.
+
+        Observability: every run updates the process-wide metrics
+        (``pipeline_runs_total``, ``pipeline_duration_seconds``, resource
+        counters, ``pipeline_failures_total`` on error) and emits a
+        ``pipeline.completed`` / ``pipeline.failed`` structured log line.
         """
+        started = time.monotonic()
+        async with ob.span("pipeline.run", attributes=self._metric_labels):
+            try:
+                result = await self._execute(docstore)
+            except Exception:
+                ob.inc("pipeline_failures_total", labels=self._metric_labels)
+                ob.LOG.exception("pipeline.failed", extra=self._metric_labels)
+                raise
+        seconds = time.monotonic() - started
+        ob.inc("pipeline_runs_total", labels=self._metric_labels)
+        ob.inc(
+            "pipeline_documents_total",
+            amount=result.documents_ingested,
+            labels=self._metric_labels,
+        )
+        ob.inc(
+            "pipeline_chunks_total",
+            amount=result.chunks_indexed,
+            labels=self._metric_labels,
+        )
+        ob.inc(
+            "pipeline_changed_total",
+            amount=result.documents_changed,
+            labels=self._metric_labels,
+        )
+        ob.inc(
+            "pipeline_skipped_total",
+            amount=result.documents_skipped,
+            labels=self._metric_labels,
+        )
+        ob.inc(
+            "pipeline_deleted_total",
+            amount=result.documents_deleted,
+            labels=self._metric_labels,
+        )
+        ob.observe("pipeline_duration_seconds", value=seconds, labels=self._metric_labels)
+        ob.LOG.info(
+            "pipeline.completed",
+            extra={
+                **self._metric_labels,
+                "duration_s": round(seconds, 4),
+                "documents": result.documents_ingested,
+                "chunks": result.chunks_indexed,
+                "changed": result.documents_changed,
+                "skipped": result.documents_skipped,
+                "deleted": result.documents_deleted,
+                "embed_cache_hits": result.embed_cache_hits,
+                "embed_cache_misses": result.embed_cache_misses,
+            },
+        )
+        return result
+
+    async def _execute(self, docstore: DocStore | None = None) -> PipelineResult:
+        """Run the stages without the observability wrapper (see :meth:`run`)."""
         problems = check_pipeline_supported(
             source=self.config.source.type,
             extract=self.config.extract.strategy,
@@ -201,7 +267,11 @@ class PipelineEngine:
             if docstore is not None and signature is not None and list_documents is not None:
                 use_listing = True
                 listing_source = cast(ListingSource, source)
-                metas = await listing_source.list_documents()
+                with ob.timer(
+                    "pipeline_stage_seconds",
+                    labels={**self._metric_labels, "stage": "list"},
+                ):
+                    metas = await listing_source.list_documents()
                 uri_by_meta = {meta.uri: meta for meta in metas}
                 wanted: set[str] = set()
                 for meta in metas:
@@ -218,72 +288,114 @@ class PipelineEngine:
                     else:
                         changed += 1
                         wanted.add(meta.uri)
-                artifacts = await listing_source.fetch(uris=wanted) if wanted else []
+                with ob.timer(
+                    "pipeline_stage_seconds",
+                    labels={**self._metric_labels, "stage": "fetch"},
+                ):
+                    artifacts = await listing_source.fetch(uris=wanted) if wanted else []
             else:
-                artifacts = await source.fetch()
+                with ob.timer(
+                    "pipeline_stage_seconds",
+                    labels={**self._metric_labels, "stage": "fetch"},
+                ):
+                    artifacts = await source.fetch()
         except SourceError as exc:
             raise PipelineError(
                 f"source '{self.config.source.type}' failed: {exc}"
             ) from exc
 
-        for artifact in artifacts:
-            artifact_hash = content_hash(artifact)
-            current[artifact.uri] = artifact_hash
-            if not use_listing:
-                documents += 1
-                stored = (
-                    docstore.entry(source_id, signature, artifact.uri)
-                    if docstore is not None and signature is not None
-                    else None
+        with ob.timer(
+            "pipeline_stage_seconds",
+            labels={**self._metric_labels, "stage": "extract"},
+        ):
+            for artifact in artifacts:
+                artifact_hash = content_hash(artifact)
+                current[artifact.uri] = artifact_hash
+                if not use_listing:
+                    documents += 1
+                    stored = (
+                        docstore.entry(source_id, signature, artifact.uri)
+                        if docstore is not None and signature is not None
+                        else None
+                    )
+                    if stored is not None and stored.content == artifact_hash:
+                        skipped += 1
+                        entries[artifact.uri] = DocEntry(content=artifact_hash)
+                        continue
+                    changed += 1
+                listed = uri_by_meta.get(artifact.uri)
+                entries[artifact.uri] = DocEntry(
+                    content=artifact_hash,
+                    listing=listed.fingerprint if listed is not None else None,
                 )
-                if stored is not None and stored.content == artifact_hash:
-                    skipped += 1
-                    entries[artifact.uri] = DocEntry(content=artifact_hash)
-                    continue
-                changed += 1
-            listed = uri_by_meta.get(artifact.uri)
-            entries[artifact.uri] = DocEntry(
-                content=artifact_hash,
-                listing=listed.fingerprint if listed is not None else None,
-            )
-            try:
-                document: Document = await extractor.extract(artifact)
-                for chunk in await chunker.chunk(document):
-                    indexed += 1
-                    if indexer is not None:
-                        enriched = chunk.model_copy(
-                            update={"metadata": {**artifact.metadata, **chunk.metadata}}
-                        )
-                        pending.append((enriched, artifact_hash))
-            except (SourceError, ValueError) as exc:
-                raise PipelineError(
-                    f"failed on artifact {artifact.uri}: {exc}"
-                ) from exc
+                try:
+                    document: Document = await extractor.extract(artifact)
+                    doc_chunks = 0
+                    for chunk in await chunker.chunk(document):
+                        indexed += 1
+                        doc_chunks += 1
+                        if indexer is not None:
+                            enriched = chunk.model_copy(
+                                update={"metadata": {**artifact.metadata, **chunk.metadata}}
+                            )
+                            pending.append((enriched, artifact_hash))
+                    ob.LOG.debug(
+                        "artifact.processed",
+                        extra={
+                            "uri": artifact.uri,
+                            "chunks": doc_chunks,
+                            "bytes": len(artifact.data),
+                        },
+                    )
+                except (SourceError, ValueError) as exc:
+                    raise PipelineError(
+                        f"failed on artifact {artifact.uri}: {exc}"
+                    ) from exc
 
         if indexer is not None and pending:
             chunks = [chunk for chunk, _ in pending]
             try:
-                vectors = await embedder.embed_batch(chunks)
+                with ob.timer(
+                    "pipeline_stage_seconds",
+                    labels={**self._metric_labels, "stage": "embed"},
+                ):
+                    vectors = await embedder.embed_batch(chunks)
+                ob.LOG.debug(
+                    "embed.batch",
+                    extra={**self._metric_labels, "chunks": len(chunks)},
+                )
             except (SourceError, ValueError) as exc:
                 raise PipelineError(f"embedding failed: {exc}") from exc
             finally:
                 closer = getattr(embedder, "close", None)
                 if callable(closer):
                     closer()
-            for (chunk, artifact_hash), vector in zip(pending, vectors, strict=True):
-                await indexer.upsert(
-                    chunk,
-                    vector,
-                    source_id=source_id,
-                    artifact_hash=artifact_hash,
-                )
+            with ob.timer(
+                "pipeline_stage_seconds",
+                labels={**self._metric_labels, "stage": "upsert"},
+            ):
+                for (chunk, artifact_hash), vector in zip(pending, vectors, strict=True):
+                    await indexer.upsert(
+                        chunk,
+                        vector,
+                        source_id=source_id,
+                        artifact_hash=artifact_hash,
+                    )
 
         if indexer is not None:
-            await indexer.reconcile(source_id, current)
+            with ob.timer(
+                "pipeline_stage_seconds",
+                labels={**self._metric_labels, "stage": "reconcile"},
+            ):
+                await indexer.reconcile(source_id, current)
 
         if docstore is not None and signature is not None:
-            deleted = docstore.commit(source_id, signature, entries)
-            docstore.save()
+            with ob.timer(
+                "pipeline_stage_seconds",
+                labels={**self._metric_labels, "stage": "commit"},
+            ):
+                deleted = docstore.commit(source_id, signature, entries)
+                docstore.save()
 
         return PipelineResult(
             documents_ingested=documents,

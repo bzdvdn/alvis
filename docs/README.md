@@ -6,6 +6,7 @@ Guides for the no-code knowledge ingestion engine.
 - [FAQ](faq.md) — short answers to common questions
 - [Extending Winnow](../CONTRIBUTING.md) — the "how to write a connector" guide
 - [Plugin registry](plugins.md) — built-in and community plugins (v1.1 SDK)
+- [Observability](observability.md) — structured logging, metrics, tracing, Prometheus export
 - [Python DSL guide](dsl.md) — describing pipelines from code
 - [Schema & versioning](schema.md) — the YAML contract and Canonical Content Tree evolution policy
 
