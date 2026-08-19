@@ -1,0 +1,112 @@
+"""Plugin SDK (v1.1) — registering, discovering, and running plugins.
+
+The example package in ``examples/kb-plugin`` is the reference: it must run
+through the SDK end-to-end (install → accepted → built → ingested) without any
+core change, which is exactly the roadmap's "done" criteria for a side project.
+"""
+
+from __future__ import annotations
+
+import sys
+from importlib.metadata import EntryPoint
+from pathlib import Path
+
+import pytest
+
+from winnow import dsl, run_async
+from winnow.config.models import SourceConfig
+from winnow.factories import build_source
+from winnow.index import MemoryIndex
+from winnow.plugin import Plugin, PluginRegistry, install_plugin, reset_registry
+from winnow.registry import check_pipeline_supported
+
+_EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "kb-plugin"
+
+
+@pytest.fixture(autouse=True)
+def _isolated_registry() -> None:
+    reset_registry()
+    yield
+    reset_registry()
+
+
+def _install_example() -> Plugin:
+    sys.path.insert(0, str(_EXAMPLE))
+    from kb_plugin import plugin
+
+    return plugin
+
+
+async def test_plugin_source_is_accepted_after_install() -> None:
+    install_plugin(_install_example())
+    assert check_pipeline_supported(
+        source="catalog", extract="auto", chunk="auto", embed="default", index="memory"
+    ) == []
+
+
+async def test_build_source_constructs_plugin_source() -> None:
+    install_plugin(_install_example())
+    config = SourceConfig(type="catalog", config={"path": str(_EXAMPLE / "data")})
+    source = build_source(config)
+    metas = await source.list_documents()
+    assert len(metas) == 2
+    assert {meta.step_id for meta in metas} == {
+        str(_EXAMPLE / "data" / "incremental-ingestion.txt"),
+        str(_EXAMPLE / "data" / "scalable-vector-search.txt"),
+    }
+
+
+async def test_plugin_source_runs_pipeline(tmp_path: Path) -> None:
+    install_plugin(_install_example())
+    cfg = dsl.pipeline(
+        SourceConfig(
+            type="catalog",
+            config={"path": str(_EXAMPLE / "data"), "tag": "products"},
+        ),
+        index=dsl.memory(),
+    )
+    indexer = MemoryIndex()
+    state = tmp_path / "state.json"
+    first = await run_async(cfg, indexer=indexer, incremental=True, state_path=str(state))
+    assert first.documents_ingested == 2
+    assert first.documents_changed == 2
+    assert first.chunks_indexed == 2
+
+    hits = await indexer.search([0.0] * 768, top_k=4)
+    assert len(hits) == 2
+    assert all(hit.metadata.get("catalog") == "products" for hit in hits)
+
+    second = await run_async(cfg, indexer=indexer, incremental=True, state_path=str(state))
+    assert second.documents_skipped == 2
+    assert second.documents_changed == 0
+
+
+def test_discovery_loads_plugins_from_entry_points() -> None:
+    sys.path.insert(0, str(_EXAMPLE))
+    ep = EntryPoint(name="kb-catalog", value="kb_plugin:plugin", group="winnow.plugins")
+
+    reg = PluginRegistry()
+    assert reg.known_types("source") == set()
+    discovered = reg.discover(entry_points=lambda group: [ep])
+    assert [p.name for p in discovered] == ["kb-catalog"]
+    assert reg.known_types("source") == {"catalog"}
+
+    assert reg.discover(entry_points=lambda group: [ep]) == []
+
+
+def test_discovery_skips_broken_entry_points(recwarn: pytest.WarningsRecorder) -> None:
+    broken = EntryPoint(name="broken", value="no_such_module_xyz:plugin", group="winnow.plugins")
+    reg = PluginRegistry()
+    assert reg.discover(entry_points=lambda group: [broken]) == []
+    assert len(recwarn) == 1
+
+
+def test_duplicate_type_registration_is_rejected() -> None:
+    install_plugin(_install_example())
+    imposter = Plugin(name="imposter", version="0.0.0", sources={"catalog": lambda **kw: None})
+    with pytest.raises(ValueError, match="already provided"):
+        install_plugin(imposter)
+
+
+def test_discovery_uses_the_process_registry_reset_clean() -> None:
+    assert PluginRegistry().known_types("source") == set()

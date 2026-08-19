@@ -13,6 +13,7 @@ from winnow.pipeline.runner import (
     run_async,
     run_many,
     run_many_async,
+    watch_async,
 )
 
 __version__ = "0.1.0"
@@ -34,4 +35,5 @@ __all__ = [
     "run_async",
     "run_many",
     "run_many_async",
+    "watch_async",
 ]

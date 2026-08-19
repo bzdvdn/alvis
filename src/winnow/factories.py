@@ -1,8 +1,14 @@
-"""Build stage adapters from declarative config."""
+"""Build stage adapters from declarative config.
+
+Built-in types map directly in this module; anything else consults the plugin
+registry (roadmap v1.1), so an installed plugin's type strings are resolved
+here without any core change. Plugin factories follow the contract documented
+in :mod:`winnow.plugin`.
+"""
 
 from __future__ import annotations
 
-from winnow.chunk import AutoChunker, SectionsChunker, SizeChunker
+from winnow.chunk import AutoChunker, Chunker, SectionsChunker, SizeChunker
 from winnow.config.loader import ConfigError
 from winnow.config.models import (
     ChunkConfig,
@@ -20,8 +26,11 @@ from winnow.embed import (
     InMemoryEmbeddingCache,
 )
 from winnow.extract import AutoExtractor
+from winnow.extract.base import Extractor
 from winnow.index import MemoryIndex, PgVectorIndex, QdrantIndex
-from winnow.registry import KNOWN_SOURCES
+from winnow.index.base import Indexer
+from winnow.plugin import registry
+from winnow.registry import known_sources
 from winnow.sources import (
     ConfluenceSource,
     FilesystemSource,
@@ -29,6 +38,7 @@ from winnow.sources import (
     GitLabSource,
     S3Source,
 )
+from winnow.sources.base import Source
 
 
 def source_identity(config: SourceConfig) -> str:
@@ -54,7 +64,7 @@ def build_source(
     config: SourceConfig,
     *,
     max_bytes: int | None = None,
-) -> FilesystemSource | ConfluenceSource | GitHubSource | GitLabSource | S3Source:
+) -> Source:
     """Build the source adapter declared by ``config``."""
     if config.type == "fs":
         return FilesystemSource(**config.config, max_bytes=max_bytes)
@@ -66,20 +76,26 @@ def build_source(
         return GitLabSource(**config.config, max_bytes=max_bytes)
     if config.type == "s3":
         return S3Source(**config.config, max_bytes=max_bytes)
+    plugin_factory = registry().factory("source", config.type)
+    if plugin_factory is not None:
+        return plugin_factory(config=config, max_bytes=max_bytes)  # type: ignore[return-value]
     raise ConfigError(
-        f"source type {config.type!r} is not implemented in v0.1 "
-        f"(known: {sorted(KNOWN_SOURCES)})"
+        f"source type {config.type!r} is not implemented "
+        f"(known: {sorted(known_sources())}; is it an installed plugin?)"
     )
 
 
-def build_extractor(config: ExtractConfig) -> AutoExtractor:
+def build_extractor(config: ExtractConfig) -> Extractor:
     """Build the extraction strategy declared by ``config``."""
     if config.strategy == "auto":
         return AutoExtractor()
+    plugin_factory = registry().factory("extractor", config.strategy)
+    if plugin_factory is not None:
+        return plugin_factory(config=config)  # type: ignore[return-value]
     raise ConfigError(f"extract strategy {config.strategy!r} is not implemented")
 
 
-def build_chunker(config: ChunkConfig) -> AutoChunker | SectionsChunker | SizeChunker:
+def build_chunker(config: ChunkConfig) -> Chunker:
     """Build the chunking strategy declared by ``config``."""
     if config.strategy == "auto":
         return AutoChunker(max_tokens=config.max_tokens, overlap=config.overlap)
@@ -87,6 +103,9 @@ def build_chunker(config: ChunkConfig) -> AutoChunker | SectionsChunker | SizeCh
         return SectionsChunker(max_tokens=config.max_tokens, overlap=config.overlap)
     if config.strategy == "size":
         return SizeChunker(max_chars=config.max_chars, overlap_chars=config.overlap_chars)
+    plugin_factory = registry().factory("chunker", config.strategy)
+    if plugin_factory is not None:
+        return plugin_factory(config=config)  # type: ignore[return-value]
     raise ConfigError(f"chunk strategy {config.strategy!r} is not implemented")
 
 
@@ -103,7 +122,10 @@ def build_embedder(
         settings.pop("cache", None)
         delegate = ApiEmbedder(**settings)
     else:
-        raise ConfigError(f"embed type {config.type!r} is not implemented")
+        plugin_factory = registry().factory("embedder", config.type)
+        if plugin_factory is None:
+            raise ConfigError(f"embed type {config.type!r} is not implemented")
+        delegate = plugin_factory(config=config)  # type: ignore[assignment]
 
     if not enable_cache or not config.cache_enabled:
         return delegate
@@ -115,7 +137,7 @@ def build_embedder(
     return CachingEmbedder(delegate, cache=cache)
 
 
-def build_indexer(config: IndexConfig) -> MemoryIndex | QdrantIndex | PgVectorIndex:
+def build_indexer(config: IndexConfig) -> Indexer:
     """Build the vector index declared by ``config``."""
     if config.type == "memory":
         return MemoryIndex()
@@ -123,4 +145,7 @@ def build_indexer(config: IndexConfig) -> MemoryIndex | QdrantIndex | PgVectorIn
         return QdrantIndex(**config.config)
     if config.type == "pgvector":
         return PgVectorIndex(**config.config)
-    raise ConfigError(f"index type {config.type!r} is not implemented in v0.1")
+    plugin_factory = registry().factory("indexer", config.type)
+    if plugin_factory is not None:
+        return plugin_factory(config=config)  # type: ignore[return-value]
+    raise ConfigError(f"index type {config.type!r} is not implemented")

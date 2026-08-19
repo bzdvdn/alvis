@@ -1,10 +1,40 @@
-"""Registry of built-in adapter types supported by Winnow.
+"""Registry of adapter types supported by Winnow.
 
-v0.1: structural reference only — `winnow validate` checks membership here.
-Plugin registration (v1.1) will extend these sets dynamically.
+Built-in types are the sets below; plugin types (roadmap v1.1) extend them
+dynamically via the plugin registry. ``check_pipeline_supported`` is the one
+place all validation goes through — CLI ``validate``/``--dry-run`` and the
+engine's pre-run check — so a plugin type is accepted the moment it is
+installed and discovered.
 """
 
 from __future__ import annotations
+
+
+def _plugin_types(kind: str) -> set[str]:
+    from winnow.plugin import registry
+
+    return registry().known_types(kind)
+
+
+def known_sources() -> set[str]:
+    return KNOWN_SOURCES | _plugin_types("source")
+
+
+def known_extract_strategies() -> set[str]:
+    return KNOWN_EXTRACT_STRATEGIES | _plugin_types("extractor")
+
+
+def known_chunk_strategies() -> set[str]:
+    return KNOWN_CHUNK_STRATEGIES | _plugin_types("chunker")
+
+
+def known_embedders() -> set[str]:
+    return KNOWN_EMBEDDERS | _plugin_types("embedder")
+
+
+def known_indexes() -> set[str]:
+    return KNOWN_INDEXES | _plugin_types("indexer")
+
 
 KNOWN_SOURCES: set[str] = {"fs", "confluence", "github", "gitlab", "s3"}
 KNOWN_EXTRACT_STRATEGIES: set[str] = {"auto"}
@@ -27,19 +57,20 @@ def check_pipeline_supported(
     """
     problems: list[str] = []
 
-    if source not in KNOWN_SOURCES:
-        problems.append(f"unsupported source type: {source!r} (known: {sorted(KNOWN_SOURCES)})")
-    if extract not in KNOWN_EXTRACT_STRATEGIES:
+    if source not in known_sources():
+        problems.append(f"unsupported source type: {source!r} (known: {sorted(known_sources())})")
+    if extract not in known_extract_strategies():
         problems.append(
-            f"unsupported extract strategy: {extract!r} (known: {sorted(KNOWN_EXTRACT_STRATEGIES)})"
+            f"unsupported extract strategy: {extract!r} "
+            f"(known: {sorted(known_extract_strategies())})"
         )
-    if chunk not in KNOWN_CHUNK_STRATEGIES:
+    if chunk not in known_chunk_strategies():
         problems.append(
-            f"unsupported chunk strategy: {chunk!r} (known: {sorted(KNOWN_CHUNK_STRATEGIES)})"
+            f"unsupported chunk strategy: {chunk!r} (known: {sorted(known_chunk_strategies())})"
         )
-    if embed not in KNOWN_EMBEDDERS:
-        problems.append(f"unsupported embed type: {embed!r} (known: {sorted(KNOWN_EMBEDDERS)})")
-    if index is not None and index not in KNOWN_INDEXES:
-        problems.append(f"unsupported index type: {index!r} (known: {sorted(KNOWN_INDEXES)})")
+    if embed not in known_embedders():
+        problems.append(f"unsupported embed type: {embed!r} (known: {sorted(known_embedders())})")
+    if index is not None and index not in known_indexes():
+        problems.append(f"unsupported index type: {index!r} (known: {sorted(known_indexes())})")
 
     return problems

@@ -183,6 +183,41 @@ module → export → `KNOWN_*` in `registry.py` → `build_*` in `factories.py`
 must implement idempotent upsert + a `reconcile` pass for the per-source prune
 to work.
 
+## Write a plugin, not a fork (v1.1)
+
+You do **not** need to modify this repository to ship an adapter. A plugin is
+an ordinary installed Python package that registers itself under the
+`winnow.plugins` entry-point group and declares a `winnow.plugin.Plugin`:
+
+```toml
+# pyproject.toml
+[project.entry-points."winnow.plugins"]
+kb-catalog = "kb_plugin:plugin"
+```
+
+```python
+# kb_plugin/__init__.py
+from winnow.plugin import Plugin
+
+def _catalog(*, config, max_bytes=None):   # factory contract (see winnow/plugin.py)
+    ...
+
+plugin = Plugin(
+    name="kb-catalog",
+    version="0.1.0",
+    sources={"catalog": _catalog},         # also: extractors, chunkers, embedders, indexers
+)
+```
+
+After `pip install .`, the adapter is accepted by `winnow validate`, listed by
+`winnow plugins`, and resolved by the stage factories — zero core changes.
+Plugins are validated their own adapter (mirroring built-ins), so plugin types
+may read any `config:` keys. The reference implementation is
+`examples/kb-plugin` (a `catalog` source with cheap-listing incremental
+support); copy it as your template and keep the tutorial contract: hello-world
+example + test + docs. External plugins are tracked in [docs/plugins.md]
+(docs/plugins.md).
+
 ---
 
 ## Contribution process

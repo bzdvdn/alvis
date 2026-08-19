@@ -36,6 +36,25 @@ delta is reported and state is stored per source + pipeline signature.
 Enable the [embedding cache](../README.md#embedding-cache) to skip
 re-embedding unchanged chunks.
 
+## How do I ingest on every change (not just manually)?
+
+Run the incremental pipeline repeatedly — `winnow run --watch --interval 60`
+polls the sources every 60 s and ingests only what changed (cheap listing
+means unchanged remote objects aren't even downloaded). Same loop
+programmatically with `winnow.watch_async(configs, interval=...,
+state_path=...)`, an async iterator of per-tick results. For instant
+reaction, keep `--watch` as the primitive a git post-push hook or a scheduler
+cron calls.
+
+## Can I add my own source without editing Winnow?
+
+Yes — the Plugin SDK (v1.1). Write an installable package that registers under
+the `winnow.plugins` entry-point group and declares a `winnow.plugin.Plugin`
+(module docstring of `winnow.plugin` documents the factory contract; the
+reference is `examples/kb-plugin`). After `pip install`, `winnow plugins`
+lists it and `winnow run`/`validate` accept its type string — no fork, no core
+change.
+
 ## Which index should I pick?
 
 - `memory` — tests and prototypes.

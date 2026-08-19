@@ -336,6 +336,23 @@ never fetched; the filesystem source hashes files locally. A second run of an
 unchanged 12-document source therefore does zero extraction, chunking, and
 embedding.
 
+**Change-triggered ingestion.** Point `--watch` at the configs and Winnow
+polls them every `--interval` seconds, ingesting only what changed per tick —
+the polling trigger is a scheduler primitive, so a push hook or cron only has
+to invoke the (already-cheap) incremental run:
+
+```text
+$ winnow run pipeline.yaml --watch --interval 60
+--watch implies --incremental; enabling incremental mode.
+[14:02:11] pipeline.yaml: 12 documents, 0 chunks indexed
+  incremental: 0 changed, 12 skipped, 0 deleted
+```
+
+The same loop is available programmatically as an async iterator
+(`winnow.watch_async(configs, interval=..., state_path=...)`) — each yielded
+tick is the per-config `PipelineResult`s, failures included, so a transient
+source outage doesn't kill the watcher.
+
 Transient failures are retried (429/5xx/connection issues) with exponential
 backoff and jitter; `Retry-After` is honored. Per-source/index config accepts
 `retries`, `retry_backoff`, and `verify: false` for self-signed HTTPS (use
@@ -347,6 +364,7 @@ the latter only against trusted internal endpoints).
 - [Docs index](docs/) — full docs site (getting started, FAQ, DSL, schema)
 - [FAQ](docs/faq.md) — short answers to common questions
 - [Contributing](CONTRIBUTING.md) — how to write a connector (cover page: connector fixture + golden tests)
+- [Plugin registry](docs/plugins.md) — built-in and community plugins (v1.1 SDK)
 - [Python DSL guide](docs/dsl.md) — describing pipelines from code
 - [Constitution](CONSTITUTION.md) — purpose, scope, open-source strategy
 - [Roadmap](ROADMAP.md) — build plan

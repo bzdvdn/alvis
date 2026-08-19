@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
-from winnow import dsl, run_async
+import pytest
+
+from winnow import dsl, run_async, watch_async
+from winnow.config import ConfigError
 from winnow.docstore import DocEntry, DocStore
 from winnow.index import MemoryIndex
 from winnow.pipeline.engine import PipelineResult, pipeline_signature
@@ -144,3 +148,59 @@ async def test_incremental_invalidated_by_chunk_config(tmp_path: Path) -> None:
     indexer, second = await _run(corpus, state, max_tokens=80, indexer=indexer)
     assert second.documents_changed == 1
     assert second.documents_skipped == 0
+
+
+def _single(tick: list[PipelineResult | BaseException]) -> PipelineResult:
+    (result,) = tick
+    assert not isinstance(result, BaseException), f"tick failed: {result}"
+    return result
+
+
+def test_watch_async_polls_and_ingests_only_changes(tmp_path: Path) -> None:
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    _write(corpus, "a.md", "# A\nfirst draft")
+    state = tmp_path / "state.json"
+    indexer = MemoryIndex()
+    cfg = dsl.pipeline(dsl.fs(path=str(corpus)), index=dsl.memory())
+
+    async def _drive() -> list[PipelineResult]:
+        gen = watch_async([cfg], state_path=str(state), indexer=indexer, interval=0.001)
+        results: list[PipelineResult] = []
+        results.append(_single(await anext(gen)))
+        _write(corpus, "a.md", "# A\nsecond draft")
+        results.append(_single(await anext(gen)))
+        results.append(_single(await anext(gen)))
+        await gen.aclose()
+        return results
+
+    tick1, tick2, tick3 = asyncio.run(_drive())
+    assert (tick1.documents_changed, tick1.documents_skipped) == (1, 0)
+    assert (tick2.documents_changed, tick2.documents_skipped) == (1, 0)
+    assert (tick3.documents_changed, tick3.documents_skipped) == (0, 1)
+    assert tick3.chunks_indexed == 0
+
+
+def test_watch_async_survives_a_failed_config(tmp_path: Path) -> None:
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    _write(corpus, "a.md", "# A\nfirst draft")
+    state = tmp_path / "state.json"
+    good = dsl.pipeline(dsl.fs(path=str(corpus)), index=dsl.memory())
+    bad = dsl.pipeline(dsl.fs(path=str(tmp_path / "missing")), index=dsl.memory())
+
+    async def _drive() -> list[PipelineResult | BaseException]:
+        gen = watch_async([bad, good], state_path=str(state), interval=0.001)
+        tick = await anext(gen)
+        await gen.aclose()
+        return tick
+
+    tick = asyncio.run(_drive())
+    assert isinstance(tick[0], BaseException)
+    assert isinstance(tick[1], PipelineResult)
+
+
+def test_watch_async_rejects_nonpositive_interval() -> None:
+    cfg = dsl.pipeline(dsl.fs(path="/x"), index=dsl.memory())
+    with pytest.raises(ConfigError):
+        asyncio.run(anext(watch_async([cfg], interval=0)))

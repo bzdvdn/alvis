@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 from pathlib import Path
 
 import typer
@@ -17,6 +18,7 @@ from winnow.docstore import DocStore
 from winnow.errors import PipelineError
 from winnow.pipeline.engine import PipelineEngine, PipelineResult
 from winnow.pipeline.runner import answer_async, query_async
+from winnow.plugin import KINDS, discover_plugins
 from winnow.registry import check_pipeline_supported
 
 app = typer.Typer(
@@ -92,6 +94,21 @@ def init(
 
 
 @app.command()
+def plugins() -> None:
+    """List installed plugins discovered via entry points."""
+    installed = discover_plugins()
+    if not installed:
+        typer.echo("No plugins discovered (entry-point group: winnow.plugins).")
+        return
+    for plugin in installed:
+        typer.echo(f"{plugin.name} {plugin.version} — {plugin.summary or 'no summary'}")
+        for kind in KINDS:
+            provided = plugin.provided_types(kind)
+            if provided:
+                typer.echo(f"  {kind}: {', '.join(sorted(provided))}")
+
+
+@app.command()
 def validate(
     config: str = typer.Argument(..., help="Path to the pipeline YAML config."),  # noqa: B008
     json_output: bool = typer.Option(  # noqa: B008
@@ -101,6 +118,7 @@ def validate(
     ),
 ) -> None:
     """Validate the pipeline YAML config and print a report."""
+    discover_plugins()
     try:
         pipeline = load_config(config)
     except ConfigError as exc:
@@ -191,11 +209,30 @@ def run(
         help="Incremental state file (default .winnow/state.json). "
         "Give distinct paths when running multiple configs in parallel.",
     ),
+    watch: bool = typer.Option(  # noqa: B008
+        False,
+        "--watch",
+        "-w",
+        help="Keep running: poll the sources every --interval and ingest only "
+        "what changed (implies --incremental). Stop with Ctrl+C.",
+    ),
+    interval: float = typer.Option(  # noqa: B008
+        60.0,
+        "--interval",
+        help="Seconds between watch ticks.",
+    ),
 ) -> None:
     """Run the configured ingestion pipeline(s)."""
     if parallel < 1:
         typer.echo("Error: --parallel must be >= 1", err=True)
         raise typer.Exit(2)
+    if interval <= 0:
+        typer.echo("Error: --interval must be > 0", err=True)
+        raise typer.Exit(2)
+    discover_plugins()
+    if watch and not incremental:
+        incremental = True
+        typer.echo("--watch implies --incremental; enabling incremental mode.")
 
     engines: list[PipelineEngine] = []
     for config in configs:
@@ -245,6 +282,32 @@ def run(
                     return exc
 
         return list(await asyncio.gather(*(_one(e) for e in engines)))
+
+    if watch:
+        async def _watch_forever() -> None:
+            while True:
+                results = await _run_all()
+                stamp = time.strftime("%H:%M:%S")
+                for config, result in zip(configs, results, strict=True):
+                    if isinstance(result, BaseException):
+                        typer.echo(f"[{stamp}] {config}: FAILED: {result}", err=True)
+                    else:
+                        typer.echo(
+                            f"[{stamp}] {config}: {result.documents_ingested} documents, "
+                            f"{result.chunks_indexed} chunks indexed"
+                        )
+                        typer.echo(
+                            f"  incremental: {result.documents_changed} changed, "
+                            f"{result.documents_skipped} skipped, "
+                            f"{result.documents_deleted} deleted"
+                        )
+                await asyncio.sleep(interval)
+
+        try:
+            asyncio.run(_watch_forever())
+        except KeyboardInterrupt:
+            typer.echo("\nWatching stopped.")
+        return
 
     results = asyncio.run(_run_all())
     failed = 0

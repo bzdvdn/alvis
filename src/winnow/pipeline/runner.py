@@ -18,13 +18,14 @@ collections to avoid reconcile races.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterable
+from collections.abc import AsyncIterator, Iterable
 from pathlib import Path
 
 from winnow.answer import Answer, Synthesizer, citation_answer
 from winnow.config import ConfigError, PipelineConfig, load_config
 from winnow.core.models import Chunk, SearchHit
 from winnow.docstore import DocStore
+from winnow.errors import PipelineError
 from winnow.factories import build_embedder, build_indexer
 from winnow.index.base import Indexer
 from winnow.pipeline.engine import PipelineEngine, PipelineResult
@@ -184,3 +185,71 @@ def run_many(
 ) -> list[PipelineResult]:
     """Synchronous variant of :func:`run_many_async`."""
     return asyncio.run(run_many_async(configs, max_parallel=max_parallel))
+
+
+async def _tick_once(
+    engines: Iterable[PipelineEngine],
+    docstore_path: Path,
+    semaphore: asyncio.Semaphore | None,
+) -> list[PipelineResult | BaseException]:
+    """Run every pipeline once; per-pipeline failures become exception elements."""
+
+    async def _one(engine: PipelineEngine) -> PipelineResult | BaseException:
+        if semaphore is None:
+            return await _run(engine, docstore_path)
+        async with semaphore:
+            return await _run(engine, docstore_path)
+
+    return list(await asyncio.gather(*(_one(e) for e in engines)))
+
+
+async def _run(engine: PipelineEngine, docstore_path: Path) -> PipelineResult | BaseException:
+    try:
+        return await engine.run(docstore=DocStore(docstore_path))
+    except (PipelineError, SourceError, ConfigError) as exc:
+        return exc
+
+
+async def watch_async(
+    configs: Iterable[ConfigLike],
+    *,
+    interval: float = 60.0,
+    max_parallel: int | None = None,
+    state_path: str | Path | None = None,
+    indexer: Indexer | None = None,
+) -> AsyncIterator[list[PipelineResult | BaseException]]:
+    """Re-run pipelines periodically until the caller stops iterating.
+
+    Each iteration is an incremental run tracked by a ``DocStore`` at
+    ``state_path`` (default ``.winnow/state.json``), so unchanged documents
+    are skipped — and, thanks to cheap listing, not even downloaded. Steady
+    state is a near-free tick; only what changed gets extracted, chunked, and
+    embedded. The first tick runs immediately; subsequent ticks start
+    ``interval`` seconds after the previous one finished.
+
+    Failures are soft: a config that raises shows up as a ``BaseException``
+    element in the yielded list (in config order) and the loop keeps going,
+    so a transient source outage does not kill the scheduler. ``break`` or
+    cancel the iteration to stop watching.
+
+    Example — poll a source every 30 s until Ctrl+C::
+
+        async for tick in watch_async(["pipeline.yaml"], interval=30):
+            for result in tick:
+                if isinstance(result, BaseException):
+                    log.error("tick failed", exc_info=result)
+                elif result.documents_changed:
+                    log.info("%s changed documents", result.documents_changed)
+    """
+    pipelines = list(configs)
+    if not pipelines:
+        return
+    if interval <= 0:
+        raise ConfigError(f"watch interval must be > 0, got {interval}")
+    engines = [PipelineEngine(_load(c), indexer=indexer) for c in pipelines]
+    semaphore = asyncio.Semaphore(max_parallel) if max_parallel else None
+    docstore_path = Path(state_path) if state_path else DocStore.default_path()
+
+    while True:
+        yield await _tick_once(engines, docstore_path, semaphore)
+        await asyncio.sleep(interval)

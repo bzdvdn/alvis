@@ -1,0 +1,10 @@
+pipeline:
+  source:
+    type: catalog
+    config:
+      path: ./data
+      tag: products
+  embed:
+    type: default
+  index:
+    type: memory

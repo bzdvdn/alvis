@@ -1,0 +1,14 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "winnow-kb-catalog"
+version = "0.1.0"
+description = "Catalog source plugin for Winnow (Plugin SDK example)"
+
+[project.entry-points."winnow.plugins"]
+kb-catalog = "kb_plugin:plugin"
+
+[tool.hatch.build.targets.wheel]
+packages = ["kb_plugin"]

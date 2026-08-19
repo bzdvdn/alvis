@@ -64,7 +64,7 @@ Goal: re-runs stop being full re-ingests. Content that didn't change is skipped 
 - [x] DocStore: per-source document state (uri → content fingerprint) keyed by pipeline signature (extract/chunk/embed settings), committed atomically only after a successful run
 - [x] Skip unchanged documents in the engine (no extract/chunk/embed/upsert); reconcile still keeps their points; delta stats (`changed/skipped/deleted`) in `PipelineResult` + CLI `winnow run --incremental [--state]`
 - [x] Phase 2 — cheap listing fingerprints for all sources: `DocumentMeta` + optional `ListingSource` interface (`list_documents()`, `fetch(uris=...)`); S3 ETag/size, GitLab/GitHub blob sha, Confluence version, fs content hash → unchanged remote objects are not downloaded at all
-- [ ] Change-triggered ingestion (git push hook / scheduler) — the `--incremental` run is the primitive they call
+- [x] Change-triggered ingestion — polling trigger `winnow run --watch [--interval]` + programmatic `winnow.watch_async` (async iterator of per-tick results, soft-fail on transient outages); push hooks / schedulers just re-invoke the cheap incremental run
 
 **Done when:** a second run of an unchanged corpus ingests zero chunks; a one-file edit ingests exactly that file.
 
@@ -89,12 +89,12 @@ Goal: freeze the public contract — Canonical Content Tree v1 + YAML schema v1.
 
 Goal: third parties can extend Winnow without touching the core.
 
-- [ ] Plugin SDK: source / parser / chunker / embedder / indexer interfaces
-- [ ] Plugin packaging: separate installable extension packages
-- [ ] Manifest + discovery: plugins register via entry points
-- [ ] Community connector registry (list + status + maintainers)
+- [x] Plugin SDK: source / extractor / chunker / embedder / indexer adapter kinds — a `Plugin` declaration + uniform factory contract (`winnow.plugin`); `check_pipeline_supported`, `validate`, stage factories, and `winnow plugins` all consult the registry, so a plugin type is accepted the moment it is discovered
+- [x] Plugin packaging: separate installable extension packages — `examples/kb-plugin` (editable-installed and run end-to-end in CI-equivalent tests) proves the "side package, zero core changes" path
+- [x] Manifest + discovery: plugins register via `winnow.plugins` entry points; discovery is lazy, idempotent, and broken packages are skipped with a warning
+- [x] Community connector registry — `docs/plugins.md` (built-in table + published-plugin rows) + `winnow plugins` CLI listing
 
-**Done when:** a side project adds a connector as a separate PyPI package with zero core changes.
+**Done when:** a side project adds a connector as a separate PyPI package with zero core changes. (Infrastructure shipped; an external contribution is the remaining proof.)
 
 ## v2.0 — Ecosystem
 

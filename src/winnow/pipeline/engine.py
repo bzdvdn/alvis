@@ -6,6 +6,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from winnow.config import ConfigError, PipelineConfig, load_config
 from winnow.core.models import Chunk, Document, DocumentMeta, content_hash
@@ -21,7 +22,7 @@ from winnow.factories import (
 )
 from winnow.index.base import Indexer
 from winnow.registry import check_pipeline_supported
-from winnow.sources.base import SourceError
+from winnow.sources.base import ListingSource, SourceError
 
 
 @dataclass
@@ -199,7 +200,8 @@ class PipelineEngine:
         try:
             if docstore is not None and signature is not None and list_documents is not None:
                 use_listing = True
-                metas = await list_documents()
+                listing_source = cast(ListingSource, source)
+                metas = await listing_source.list_documents()
                 uri_by_meta = {meta.uri: meta for meta in metas}
                 wanted: set[str] = set()
                 for meta in metas:
@@ -216,7 +218,7 @@ class PipelineEngine:
                     else:
                         changed += 1
                         wanted.add(meta.uri)
-                artifacts = await source.fetch(uris=wanted) if wanted else []
+                artifacts = await listing_source.fetch(uris=wanted) if wanted else []
             else:
                 artifacts = await source.fetch()
         except SourceError as exc:
@@ -239,17 +241,20 @@ class PipelineEngine:
                     entries[artifact.uri] = DocEntry(content=artifact_hash)
                     continue
                 changed += 1
-            meta = uri_by_meta.get(artifact.uri)
+            listed = uri_by_meta.get(artifact.uri)
             entries[artifact.uri] = DocEntry(
                 content=artifact_hash,
-                listing=meta.fingerprint if meta is not None else None,
+                listing=listed.fingerprint if listed is not None else None,
             )
             try:
                 document: Document = await extractor.extract(artifact)
                 for chunk in await chunker.chunk(document):
                     indexed += 1
                     if indexer is not None:
-                        pending.append((chunk, artifact_hash))
+                        enriched = chunk.model_copy(
+                            update={"metadata": {**artifact.metadata, **chunk.metadata}}
+                        )
+                        pending.append((enriched, artifact_hash))
             except (SourceError, ValueError) as exc:
                 raise PipelineError(
                     f"failed on artifact {artifact.uri}: {exc}"
