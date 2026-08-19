@@ -45,6 +45,18 @@ Goal: attract first contributors and prove the plugin contract.
 
 **Done when:** at least one external contribution merged; a non-core-team member delivers a working connector feature.
 
+## v0.3 — Q&A convenience (answering, not just retrieval)
+
+Goal: go from "nearest chunks" to a cited answer, the workflow corporate users actually ask for.
+
+- [x] Response synthesis with citations: `winnow.answer` (`Synthesizer` on the OpenAI-compatible chat contract; `[N]` markers → `Citation`s; offline `citation_answer` fallback so `--answer` works with no API key) + CLI `winnow query --answer`
+- [ ] Metadata filters + hybrid search (dense + BM25/full-text) — filter by `space:`/`path:`/source before scoring
+- [ ] Reranking (cross-encoder) over retrieved candidates
+- [ ] Multi-turn chat with history (follow-up questions)
+- [ ] Evaluation harness (faithfulness/relevancy) to prove retrieval quality
+
+**Done when:** a user asks a natural-language question and gets a cited, grounded answer — with or without an LLM key.
+
 ## v1.0 — Stable Contract
 
 Goal: freeze the public contract — Canonical Content Tree v1 + YAML schema v1.

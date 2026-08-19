@@ -219,13 +219,29 @@ with the config's embedder and searched nearest-neighbour:
 winnow query examples/pgvector.yaml --text "how do I install winnow?" --top-k 5
 ```
 
+`--answer` synthesizes a cited answer over the top hits instead of just
+returning chunks — works with an OpenAI-compatible endpoint
+(`--answer-base-url/--answer-model/--answer-api-token-env`, defaults point at
+OpenAI), and falls back to numbered excerpts when no API key is set:
+
+```bash
+winnow query examples/pgvector.yaml --text "how do I install winnow?" --answer
+```
+
 Programmatically (same contract as ingestion):
 
 ```python
-from winnow import query, query_async
+from winnow import query, query_async, answer, answer_async, Synthesizer
 
 hits = query("examples/pgvector.yaml", "how do I install winnow?", top_k=5)
 await query_async("examples/pgvector.yaml", "how do I install winnow?")
+
+# cited answer over the hits, with an explicit LLM client
+llm = Synthesizer(base_url="https://api.openai.com/v1", model="gpt-4o-mini",
+                  api_token_env="OPENAI_API_KEY")
+result = answer("examples/pgvector.yaml", "how do I install winnow?", llm=llm)
+result.text                      # "Run `pip install winnow` [1], ..."
+result.citations                 # [Citation(index=1, source_uri=..., ...)]
 ```
 
 `SearchHit` carries `text`, `source_uri`, `metadata`, and a cosine `score`

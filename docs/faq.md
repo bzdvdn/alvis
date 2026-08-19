@@ -53,6 +53,14 @@ Each source/index accepts `retries`, `retry_backoff`, and `verify`. Use
 `verify: false` only against trusted internal endpoints with self-signed
 certificates.
 
+## Can it answer questions, or only retrieve chunks?
+
+Both. Retrieval returns the nearest chunks (`SearchHit`); for a grounded
+answer add an OpenAI-compatible chat endpoint and the answer is synthesized
+with `[N]` citations tied to each `source_uri`. Without an API key,
+`winnow query --answer` falls back to numbered excerpts instead of failing:
+`answer(cfg, question, llm=Synthesizer(...))` / CLI `--answer`.
+
 ## Where do I report a bug or request a source?
 
 Open an issue on the repository. When contributing a connector, follow the

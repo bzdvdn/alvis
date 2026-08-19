@@ -21,11 +21,13 @@ import asyncio
 from collections.abc import Iterable
 from pathlib import Path
 
+from winnow.answer import Answer, Synthesizer, citation_answer
 from winnow.config import ConfigError, PipelineConfig, load_config
 from winnow.core.models import Chunk, SearchHit
 from winnow.factories import build_embedder, build_indexer
 from winnow.index.base import Indexer
 from winnow.pipeline.engine import PipelineEngine, PipelineResult
+from winnow.sources.base import SourceError
 
 ConfigLike = str | Path | PipelineConfig
 
@@ -122,6 +124,43 @@ def query(
 ) -> list[SearchHit]:
     """Synchronous variant of :func:`query_async`."""
     return asyncio.run(query_async(config, text, top_k=top_k, indexer=indexer))
+
+
+async def answer_async(
+    config: ConfigLike,
+    text: str,
+    *,
+    top_k: int = 5,
+    indexer: Indexer | None = None,
+    llm: Synthesizer | None = None,
+) -> Answer:
+    """Retrieve the closest chunks and synthesize a cited answer.
+
+    With ``llm`` set, the hits are handed to a chat-completions endpoint that
+    answers with ``[N]`` citations tied to ``SearchHit.source_uri``. Without
+    an LLM (or if the call fails), falls back to numbering the excerpts
+    itself, so answering is possible with the ``default`` embedder and no
+    API key.
+    """
+    hits = await query_async(config, text, top_k=top_k, indexer=indexer)
+    if llm is None:
+        return citation_answer(text, hits)
+    try:
+        return await llm.answer(text, hits)
+    except SourceError:
+        return citation_answer(text, hits, reason="LLM call failed")
+
+
+def answer(
+    config: ConfigLike,
+    text: str,
+    *,
+    top_k: int = 5,
+    indexer: Indexer | None = None,
+    llm: Synthesizer | None = None,
+) -> Answer:
+    """Synchronous variant of :func:`answer_async`."""
+    return asyncio.run(answer_async(config, text, top_k=top_k, indexer=indexer, llm=llm))
 
 
 def run_many(

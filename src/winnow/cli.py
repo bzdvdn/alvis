@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 
 import typer
 
 from winnow import __version__
+from winnow.answer import Synthesizer
 from winnow.config import ConfigError, load_config
 from winnow.core.models import CCT_SCHEMA_VERSION
 from winnow.errors import PipelineError
 from winnow.pipeline.engine import PipelineEngine, PipelineResult
-from winnow.pipeline.runner import query_async
+from winnow.pipeline.runner import answer_async, query_async
 from winnow.registry import check_pipeline_supported
 
 app = typer.Typer(
@@ -265,13 +267,56 @@ def query(
         "--top-k",
         help="Number of nearest chunks to return.",
     ),
+    answer: bool = typer.Option(  # noqa: B008
+        False,
+        "--answer",
+        "-a",
+        help="Synthesize a cited answer over the hits (LLM optional).",
+    ),
+    llm_base_url: str = typer.Option(  # noqa: B008
+        "https://api.openai.com/v1",
+        "--answer-base-url",
+        help="OpenAI-compatible chat endpoint for --answer.",
+    ),
+    llm_model: str = typer.Option(  # noqa: B008
+        "gpt-4o-mini",
+        "--answer-model",
+        help="Chat model for --answer.",
+    ),
+    llm_api_token_env: str = typer.Option(  # noqa: B008
+        "OPENAI_API_KEY",
+        "--answer-api-token-env",
+        help="Env var holding the chat API token for --answer.",
+    ),
 ) -> None:
-    """Retrieve the chunks closest to --text from the configured index."""
+    """Retrieve the chunks closest to --text (or synthesize an answer)."""
     try:
-        results = asyncio.run(query_async(config, text, top_k=top_k))
+        if answer:
+            llm = None
+            if os.environ.get(llm_api_token_env):
+                llm = Synthesizer(
+                    base_url=llm_base_url,
+                    model=llm_model,
+                    api_token_env=llm_api_token_env,
+                )
+            result = asyncio.run(answer_async(config, text, top_k=top_k, llm=llm))
+        else:
+            results = asyncio.run(query_async(config, text, top_k=top_k))
+            result = None
     except (ConfigError, PipelineError) as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1) from exc
+    if result is not None:
+        typer.echo(result.text)
+        typer.echo("")
+        if result.citations:
+            typer.echo("Sources:")
+            for citation in result.citations:
+                typer.echo(
+                    f"  [{citation.index}] {citation.source_uri}  "
+                    f"(score {citation.score:.4f})"
+                )
+        return
     if not results:
         typer.echo("No matches found.")
         return
