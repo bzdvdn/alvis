@@ -1,11 +1,13 @@
 """Canonical Content Tree runtime models.
 
-Stage contract (v0, provisional — hardens toward v1.0):
+Stage contract (v1, frozen as of v1.0 — see ``docs/schema.md`` for the
+backward-compatible evolution policy):
     Source  →  Artifact  →  Canonical Content Tree  →  Chunk  →  Embedding  →  Index
 
 The public YAML config lives in `winnow.config`; these are the runtime objects
 that flow through the pipeline. Models are pydantic (frozen) so the contract
-is validated, serializable, and versionable.
+is validated, serializable, and versionable. Every ``Document`` carries its
+``schema_version`` so consumers can detect which contract it conforms to.
 """
 
 from __future__ import annotations
@@ -14,6 +16,9 @@ import hashlib
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+
+CCT_SCHEMA_VERSION = 1
+"""Current Canonical Content Tree schema version (bumped only by RFC)."""
 
 
 class Artifact(BaseModel):
@@ -48,10 +53,11 @@ class Section(BaseModel):
 
 
 class Document(BaseModel):
-    """Canonical Content Tree v0 — the intermediate form between extraction and chunking."""
+    """Canonical Content Tree v1 — the intermediate form between extraction and chunking."""
 
     model_config = ConfigDict(frozen=True)
 
+    schema_version: int = CCT_SCHEMA_VERSION
     uri: str
     title: str
     sections: tuple[Section, ...] = Field(default_factory=tuple)

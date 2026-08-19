@@ -2,5 +2,6 @@
 
 from winnow.chunk.auto import AutoChunker, Chunker
 from winnow.chunk.sections import SectionsChunker
+from winnow.chunk.size import SizeChunker
 
-__all__ = ["AutoChunker", "Chunker", "SectionsChunker"]
+__all__ = ["AutoChunker", "Chunker", "SectionsChunker", "SizeChunker"]

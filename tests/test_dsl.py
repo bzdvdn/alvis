@@ -68,6 +68,14 @@ def test_sections_chunk_strategy_roundtrips() -> None:
     assert cfg.chunk.max_tokens == 120
 
 
+def test_size_chunk_strategy_roundtrips() -> None:
+    cfg = dsl.chunk(strategy="size", max_chars=2048, overlap_chars=64)
+    assert cfg.strategy == "size"
+    assert cfg.max_chars == 2048
+    assert cfg.overlap_chars == 64
+    assert cfg.max_tokens == 500
+
+
 def test_pgvector_dsl_populates_config() -> None:
     cfg = dsl.pgvector(dsn="postgresql://winnow@localhost/winnow", table="chunks")
     assert cfg.type == "pgvector"

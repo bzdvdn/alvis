@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from winnow.chunk import AutoChunker, SectionsChunker
+from winnow.chunk import AutoChunker, SectionsChunker, SizeChunker
 from winnow.config.loader import ConfigError
 from winnow.config.models import (
     ChunkConfig,
@@ -45,17 +45,19 @@ def source_identity(config: SourceConfig) -> str:
 
 def build_source(
     config: SourceConfig,
+    *,
+    max_bytes: int | None = None,
 ) -> FilesystemSource | ConfluenceSource | GitHubSource | GitLabSource | S3Source:
     if config.type == "fs":
-        return FilesystemSource(**config.config)
+        return FilesystemSource(**config.config, max_bytes=max_bytes)
     if config.type == "confluence":
         return ConfluenceSource(**config.config)
     if config.type == "github":
-        return GitHubSource(**config.config)
+        return GitHubSource(**config.config, max_bytes=max_bytes)
     if config.type == "gitlab":
-        return GitLabSource(**config.config)
+        return GitLabSource(**config.config, max_bytes=max_bytes)
     if config.type == "s3":
-        return S3Source(**config.config)
+        return S3Source(**config.config, max_bytes=max_bytes)
     raise ConfigError(
         f"source type {config.type!r} is not implemented in v0.1 "
         f"(known: {sorted(KNOWN_SOURCES)})"
@@ -68,11 +70,13 @@ def build_extractor(config: ExtractConfig) -> AutoExtractor:
     raise ConfigError(f"extract strategy {config.strategy!r} is not implemented")
 
 
-def build_chunker(config: ChunkConfig) -> AutoChunker | SectionsChunker:
+def build_chunker(config: ChunkConfig) -> AutoChunker | SectionsChunker | SizeChunker:
     if config.strategy == "auto":
         return AutoChunker(max_tokens=config.max_tokens, overlap=config.overlap)
     if config.strategy == "sections":
         return SectionsChunker(max_tokens=config.max_tokens, overlap=config.overlap)
+    if config.strategy == "size":
+        return SizeChunker(max_chars=config.max_chars, overlap_chars=config.overlap_chars)
     raise ConfigError(f"chunk strategy {config.strategy!r} is not implemented")
 
 

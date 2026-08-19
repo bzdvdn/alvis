@@ -25,6 +25,7 @@ Example:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from winnow.config.models import (
     ChunkConfig,
@@ -167,19 +168,29 @@ def chunk(
     strategy: str = "auto",
     max_tokens: int = 500,
     overlap: int = 50,
+    max_chars: int = 2000,
+    overlap_chars: int = 200,
 ) -> ChunkConfig:
     """Auto chunking.
 
     ``strategy="auto"`` splits sections by token budget with overlap;
     ``strategy="sections"`` produces one chunk per heading, repeating the
-    heading as context on oversized-section continuations.
+    heading as context on oversized-section continuations;
+    ``strategy="size"`` cuts on a fixed character budget (``max_chars``)
+    with ``overlap_chars`` overlap, ignoring document structure.
     """
+    settings: dict[str, Any] = {}
+    if max_tokens != 500:
+        settings["max_tokens"] = max_tokens
+    if overlap != 50:
+        settings["overlap"] = overlap
+    if max_chars != 2000:
+        settings["max_chars"] = max_chars
+    if overlap_chars != 200:
+        settings["overlap_chars"] = overlap_chars
     return ChunkConfig(
         strategy=strategy,
-        config={
-            **({"max_tokens": max_tokens} if max_tokens != 500 else {}),
-            **({"overlap": overlap} if overlap != 50 else {}),
-        },
+        config=settings,
     )
 
 

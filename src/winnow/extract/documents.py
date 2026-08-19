@@ -39,7 +39,12 @@ def _make_document(artifact: Artifact, title: str, sections: list[Section]) -> D
 
 
 class PdfExtractor:
-    """Extracts per-page text from a PDF (pypdf)."""
+    """Extracts per-page text from a PDF (pypdf).
+
+    Parsing runs in a worker thread (``asyncio.to_thread``) so the event loop
+    is never blocked. PDFs need random access, so the full bytes are parsed;
+    upstream artifacts are capped by the pipeline's ``max_bytes`` budget.
+    """
 
     def _parse(self, data: bytes) -> tuple[str, list[Section]]:
         if not _domains["pypdf"]:
@@ -66,7 +71,11 @@ class PdfExtractor:
 
 
 class DocxExtractor:
-    """Extracts headings and body text from a Word document (python-docx)."""
+    """Extracts headings and body text from a Word document (python-docx).
+
+    Parsing runs in a worker thread; as with PDF, the whole (capped) file is
+    parsed because DOCX is a zip needing random access.
+    """
 
     def _parse(self, data: bytes) -> tuple[str, list[Section]]:
         if not _domains["docx"]:
@@ -106,7 +115,12 @@ class DocxExtractor:
 
 
 class XlsxExtractor:
-    """Extracts each worksheet as a ``<sheet title>`` section (openpyxl)."""
+    """Extracts each worksheet as a ``<sheet title>`` section (openpyxl).
+
+    Workbooks are opened ``read_only=True`` and rows streamed lazily with
+    ``iter_rows``, so large files never materialise in memory — the event
+    loop stays responsive via ``asyncio.to_thread``.
+    """
 
     def _parse(self, data: bytes) -> tuple[str, list[Section]]:
         if not _domains["openpyxl"]:

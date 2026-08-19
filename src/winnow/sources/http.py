@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import os
 import time
 from collections.abc import Callable
@@ -36,6 +37,7 @@ class HttpClient:
         verify: bool | str = True,
         transport: httpx.AsyncBaseTransport | None = None,
         header_hook: Callable[[str, str, dict[str, Any] | None], dict[str, str]] | None = None,
+        max_bytes: int | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_token_env = api_token_env
@@ -46,6 +48,7 @@ class HttpClient:
         self.verify = verify
         self.transport = transport
         self.header_hook = header_hook
+        self.max_bytes = max_bytes
 
     def _headers(self, method: str, path: str, query: dict[str, Any] | None) -> dict[str, str]:
         headers = {"Accept": "application/json"}
@@ -142,11 +145,36 @@ class HttpClient:
                         f"{method} {url} returned HTTP {resp.status_code}",
                         status_code=resp.status_code,
                     )
+                body = await self._read_capped(resp, method, url)
                 if raw:
-                    return resp.content
-                return resp.json() if resp.content else {}
+                    return body
+                return json.loads(body) if body else {}
 
         return b"" if raw else {}
+
+    async def _read_capped(
+        self,
+        resp: httpx.Response,
+        method: str,
+        url: str,
+    ) -> bytes:
+        """Read the response body, aborting once ``max_bytes`` is exceeded.
+
+        The body is consumed incrementally (``aiter_bytes``), so a response
+        larger than the configured budget never materialises in memory. When
+        no cap is set the body is read as a whole.
+        """
+        if self.max_bytes is None:
+            return await resp.aread()
+        parts = bytearray()
+        async for chunk in resp.aiter_bytes(chunk_size=65536):
+            parts.extend(chunk)
+            if len(parts) > self.max_bytes:
+                raise SourceError(
+                    f"{method} {url} exceeds max_bytes={self.max_bytes}",
+                    status_code=413,
+                )
+        return bytes(parts)
 
     def _delay(self, attempt: int, status: int | None, retry_after: str | None) -> float:
         if retry_after:

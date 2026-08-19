@@ -35,7 +35,7 @@ run(config)                      # sync run (own event loop)
 | `dsl.gitlab(project, url=)` | `gitlab`    | project blobs; self-hosted via `url`      |
 | `dsl.s3(...)`           | `s3`            | S3 bucket objects (SigV4, no boto3)       |
 | `dsl.extract()`         | `auto`          | markdown/html/plain/pdf/docx/xlsx → tree  |
-| `dsl.chunk(max_tokens, overlap, strategy)` | `auto`  | auto chunking (`sections` → chunk per heading) |
+| `dsl.chunk(max_tokens, overlap, strategy)` | `auto`  | auto/sections/size chunking |
 | `dsl.embed_openai(...)` | `openai`        | OpenAI-compatible embedder API            |
 | `dsl.qdrant(url, collection)` | `qdrant`  | Qdrant index                              |
 | `dsl.pgvector(dsn, dsn_env, table)` | `pgvector` | PostgreSQL + pgvector index (`winnow[pgindex]`) |

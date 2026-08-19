@@ -49,10 +49,9 @@ Goal: attract first contributors and prove the plugin contract.
 
 Goal: freeze the public contract — Canonical Content Tree v1 + YAML schema v1.
 
-- [ ] Canonical Content Tree v1 (versioned, backward-compatible evolution policy)
-- [x] Chunking strategies: auto (token), by heading (`sections`); overlap support
-- [ ] Chunking strategy: by size
-- [ ] Memory-safe handling of large PDF/DOCX/XLSX (async + streaming)
+- [x] Canonical Content Tree v1 (versioned YAML `schema_version` + `Document.schema_version`, backward-compatible evolution policy in docs/schema.md)
+- [x] Chunking strategies: auto (token), by heading (`sections`), by size; overlap support
+- [x] Memory-safe handling of large PDF/DOCX/XLSX (async + streaming): extract `max_bytes` cap streamed via `aiter_bytes` (413 skip in GitLab/S3/GitHub), fs size pre-check, XLSX `read_only` row streaming; compute in `to_thread`
 - [x] Idempotent ingestion: deterministic point IDs (uuid5), per-source reconcile pass, dedup by content hash — live-verified (re-run 6→6, change/delete prune)
 - [x] Retrieval: `winnow.query` / `query_async` (SearchHit with cosine score) + CLI `winnow query` — live-verified against pgvector (exact section match) and Qdrant (1.0 for verbatim chunk)
 - [x] Retries in HttpClient: 429/5xx/network, exponential backoff + jitter, Retry-After; `retries`/`retry_backoff`/`verify` config — live-verified (survived Qdrant outage)

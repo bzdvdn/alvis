@@ -143,6 +143,7 @@ class S3Source:
         retry_backoff: float = 1.0,
         verify: bool | str = True,
         transport: httpx.AsyncBaseTransport | None = None,
+        max_bytes: int | None = None,
     ) -> None:
         self.bucket = bucket
         self.prefix = prefix
@@ -166,6 +167,7 @@ class S3Source:
             header_hook=lambda method, path, query: signer.headers(
                 method, path, query, self.host
             ),
+            max_bytes=max_bytes,
         )
 
     async def fetch(self) -> list[Artifact]:
@@ -173,12 +175,17 @@ class S3Source:
         for key in await self._list_keys():
             if not self._wanted(key):
                 continue
-            blob = await self.client.request(
-                "GET",
-                f"/{self.bucket}/{quote(key, safe='/')}",
-                ok_status=(200,),
-                raw=True,
-            )
+            try:
+                blob = await self.client.request(
+                    "GET",
+                    f"/{self.bucket}/{quote(key, safe='/')}",
+                    ok_status=(200,),
+                    raw=True,
+                )
+            except SourceError as exc:
+                if exc.status_code == 413:
+                    continue  # oversized object skipped, others abort the run
+                raise
             artifacts.append(
                 Artifact(
                     step_id=_sha256(f"{self.bucket}/{key}".encode()),

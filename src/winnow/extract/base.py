@@ -7,6 +7,7 @@ import re
 from typing import Protocol
 
 from winnow.core.models import Artifact, Document, Section
+from winnow.extract.csv import CsvExtractor
 from winnow.extract.documents import (
     _CONTENT_DOCX,
     _CONTENT_PDF,
@@ -15,6 +16,7 @@ from winnow.extract.documents import (
     PdfExtractor,
     XlsxExtractor,
 )
+from winnow.extract.json import JsonExtractor
 from winnow.extract.markdown import MarkdownExtractor
 
 _HTML_HEADING_RE = re.compile(r"(?is)<h([1-6])[^>]*>(.*?)</h\1>")
@@ -43,6 +45,10 @@ class AutoExtractor:
             return await DocxExtractor().extract(artifact)
         if content_type == _CONTENT_XLSX:
             return await XlsxExtractor().extract(artifact)
+        if content_type == "application/json":
+            return await JsonExtractor().extract(artifact)
+        if content_type == "text/csv":
+            return await CsvExtractor().extract(artifact)
         raise ValueError(f"unsupported content type: {content_type!r}")
 
 

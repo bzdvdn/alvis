@@ -8,6 +8,7 @@ from urllib.parse import quote
 import httpx
 
 from winnow.core.models import Artifact
+from winnow.sources.base import SourceError
 from winnow.sources.content_types import content_type, is_ingestible, matches_globs
 from winnow.sources.http import HttpClient
 
@@ -41,6 +42,7 @@ class GitLabSource:
         transport: httpx.AsyncBaseTransport | None = None,
         per_page: int = 100,
         url: str = "https://gitlab.com",
+        max_bytes: int | None = None,
     ) -> None:
         if url.endswith("/api/v4"):
             url = url[: -len("/api/v4")]
@@ -60,6 +62,7 @@ class GitLabSource:
             retry_backoff=retry_backoff,
             verify=verify,
             transport=transport,
+            max_bytes=max_bytes,
         )
 
     async def fetch(self) -> list[Artifact]:
@@ -68,17 +71,22 @@ class GitLabSource:
             file_path = item["path"]
             if not self._wanted(file_path):
                 continue
-            blob = await self.client.request(
-                "GET",
-                f"/projects/{self.project}/repository/blobs/{item['id']}/raw",
-                ok_status=(200,),
-                raw=True,
-            )
+            try:
+                blob = await self.client.request(
+                    "GET",
+                    f"/projects/{self.project}/repository/blobs/{item['id']}/raw",
+                    ok_status=(200,),
+                    raw=True,
+                )
+            except SourceError as exc:
+                if exc.status_code == 413:
+                    continue  # oversized blob skipped, others abort the run
+                raise
             artifacts.append(
                 Artifact(
                     step_id=item["id"],
-uri=f"{self.web_base}/{self.project_web}/-/blob/"
-                f"{quote(self.branch)}/{file_path}",
+                    uri=f"{self.web_base}/{self.project_web}/-/blob/"
+                    f"{quote(self.branch)}/{file_path}",
                     content_type=content_type(file_path),
                     data=blob,
                     metadata={

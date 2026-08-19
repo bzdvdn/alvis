@@ -14,14 +14,26 @@ from winnow.sources.content_types import is_ingestible
 class FilesystemSource:
     """Yields one artifact per text file under ``path`` (recursively)."""
 
-    def __init__(self, path: str, pattern: str | None = None) -> None:
+    def __init__(
+        self,
+        path: str,
+        pattern: str | None = None,
+        max_bytes: int | None = None,
+    ) -> None:
         self.root = Path(path)
         self.pattern = pattern
+        self.max_bytes = max_bytes
 
     async def fetch(self) -> list[Artifact]:
         files = self._discover()
         artifacts: list[Artifact] = []
         for file_path in files:
+            if self.max_bytes is not None:
+                try:
+                    if file_path.stat().st_size > self.max_bytes:
+                        continue
+                except OSError:
+                    continue
             try:
                 data = await asyncio.to_thread(file_path.read_bytes)
             except OSError as exc:

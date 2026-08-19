@@ -22,7 +22,39 @@ pip install -e .[documents]
 
 PDF pages become `Page N` sections, DOCX headings become section headings,
 and each XLSX worksheet becomes a `<sheet title>` section with `|`-joined
-cells.
+cells. JSON is parsed structurally: every scalar becomes a section headed by
+its dotted path (`user.address.city`), arrays indexed (`items.0`), so each
+fact is independently retrievable. CSV yields one `Row N` section per line,
+streamed lazily; a text first row is used as a header so rows read as
+`name: Ada | team: core`. YAML/TOML are ingested as plain text.
+
+Large binaries are handled safely: parsing runs in a worker thread, XLSX
+rows stream lazily (`read_only`), and an optional artifact budget skips
+oversized files without reading them into memory:
+
+```yaml
+pipeline:
+  source:
+    type: fs
+    config:
+      path: ./docs
+  extract:
+    config:
+      max_bytes: 10485760   # skip artifacts > 10 MiB
+  index:
+    type: memory
+```
+
+The HTTP sources (GitLab/S3/GitHub) stream bodies through the same cap and
+skip oversize objects instead of buffering them.
+
+## Contracts
+
+Both public contracts are versioned and frozen at v1: the **YAML schema**
+(`pipeline.schema_version`, default `1`) and the **Canonical Content Tree**
+(`Document.schema_version`). Old configs and trees load unchanged; unknown
+versions fail fast. The versioning and backward-compatible evolution policy
+live in [docs/schema.md](docs/schema.md).
 
 ## Quick start
 
@@ -130,6 +162,8 @@ with whatever dimensionality the model returns.
 - `auto` — paragraph-aware token-budget splitting with overlap (default).
 - `sections` — one chunk per section heading; oversized sections are split
   on the budget with the heading repeated as context on continuations.
+- `size` — pure character-budget splitting (`max_chars`, `overlap_chars`)
+  for unstructured sources with no reliable headings.
 
 ### Indexes
 

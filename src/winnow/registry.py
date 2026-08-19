@@ -8,7 +8,7 @@ from __future__ import annotations
 
 KNOWN_SOURCES: set[str] = {"fs", "confluence", "github", "gitlab", "s3"}
 KNOWN_EXTRACT_STRATEGIES: set[str] = {"auto"}
-KNOWN_CHUNK_STRATEGIES: set[str] = {"auto", "sections"}
+KNOWN_CHUNK_STRATEGIES: set[str] = {"auto", "sections", "size"}
 KNOWN_EMBEDDERS: set[str] = {"default", "openai"}
 KNOWN_INDEXES: set[str] = {"memory", "qdrant", "pgvector"}
 

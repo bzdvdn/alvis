@@ -9,6 +9,7 @@ import typer
 
 from winnow import __version__
 from winnow.config import ConfigError, load_config
+from winnow.core.models import CCT_SCHEMA_VERSION
 from winnow.errors import PipelineError
 from winnow.pipeline.engine import PipelineEngine, PipelineResult
 from winnow.pipeline.runner import query_async
@@ -107,6 +108,9 @@ def validate(config: str = typer.Argument(..., help="Path to the pipeline YAML c
         raise typer.Exit(1)
 
     typer.echo(f"{config} is valid:")
+    typer.echo(
+        f"  contract: schema {pipeline.schema_version} / cct {CCT_SCHEMA_VERSION}"
+    )
     typer.echo(f"  source: {pipeline.source.type}")
     typer.echo(f"  extract: {pipeline.extract.strategy}")
     typer.echo(f"  chunk: {pipeline.chunk.strategy} (max_tokens={pipeline.chunk.max_tokens})")

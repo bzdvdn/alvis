@@ -51,6 +51,8 @@ _MIMETYPES: dict[str, str] = {
     ".xlsx": (
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     ),
+    ".json": "application/json",
+    ".csv": "text/csv",
 }
 
 

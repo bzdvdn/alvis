@@ -91,3 +91,34 @@ def test_unknown_stage_key_rejected(tmp_path: Path) -> None:
     content = "pipeline:\n  source:\n    type: confluence\n  bogus: stage\n"
     with pytest.raises(ConfigError, match="bogus"):
         load_config(write(tmp_path, content))
+
+
+def test_schema_version_defaults_to_one(tmp_path: Path) -> None:
+    cfg = load_config(write(tmp_path, VALID_PIPELINE))
+    assert cfg.schema_version == 1
+
+
+def test_explicit_schema_version_one_accepted(tmp_path: Path) -> None:
+    content = "pipeline:\n  schema_version: 1\n  source:\n    type: confluence\n"
+    cfg = load_config(write(tmp_path, content))
+    assert cfg.schema_version == 1
+
+
+def test_unsupported_schema_version_rejected(tmp_path: Path) -> None:
+    content = "pipeline:\n  schema_version: 2\n  source:\n    type: confluence\n"
+    with pytest.raises(ConfigError, match="schema_version"):
+        load_config(write(tmp_path, content))
+
+
+def test_cct_schema_version_on_document() -> None:
+    from winnow.config.models import PIPELINE_SCHEMA_VERSION
+    from winnow.core.models import CCT_SCHEMA_VERSION, Document
+
+    assert PIPELINE_SCHEMA_VERSION == 1
+    assert CCT_SCHEMA_VERSION == 1
+    document = Document(uri="u", title="t")
+    assert document.schema_version == 1
+
+    loaded = Document.model_validate(document.model_dump())
+    assert loaded == document
+    assert loaded.schema_version == 1

@@ -8,6 +8,7 @@ from urllib.parse import quote
 import httpx
 
 from winnow.core.models import Artifact
+from winnow.sources.base import SourceError
 from winnow.sources.content_types import content_type, is_ingestible, matches_globs
 from winnow.sources.http import HttpClient
 
@@ -36,6 +37,7 @@ class GitHubSource:
         retry_backoff: float = 1.0,
         verify: bool | str = True,
         transport: httpx.AsyncBaseTransport | None = None,
+        max_bytes: int | None = None,
     ) -> None:
         self.repo = repo
         self.branch = branch
@@ -49,6 +51,7 @@ class GitHubSource:
             retry_backoff=retry_backoff,
             verify=verify,
             transport=transport,
+            max_bytes=max_bytes,
         )
 
     async def fetch(self) -> list[Artifact]:
@@ -64,10 +67,15 @@ class GitHubSource:
             file_path = item["path"]
             if not self._wanted(file_path):
                 continue
-            info = await self.client.request(
-                "GET",
-                f"/repos/{self.repo}/contents/{quote(file_path, safe='/')}",
-            )
+            try:
+                info = await self.client.request(
+                    "GET",
+                    f"/repos/{self.repo}/contents/{quote(file_path, safe='/')}",
+                )
+            except SourceError as exc:
+                if exc.status_code == 413:
+                    continue  # oversized blob skipped, others abort the run
+                raise
             data = base64.b64decode(info.get("content") or "")
             artifacts.append(
                 Artifact(

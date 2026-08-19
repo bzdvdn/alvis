@@ -43,12 +43,21 @@ class PipelineEngine:
     def describe(self) -> str:
         """Human-readable summary of the configured pipeline (dry-run output)."""
         index = self.config.index.type if self.config.index else "not configured"
+        if self.config.chunk.strategy == "size":
+            chunk_summary = (
+                f"size (max_chars={self.config.chunk.max_chars}, "
+                f"overlap_chars={self.config.chunk.overlap_chars})"
+            )
+        else:
+            chunk_summary = (
+                f"{self.config.chunk.strategy} "
+                f"(max_tokens={self.config.chunk.max_tokens}, "
+                f"overlap={self.config.chunk.overlap})"
+            )
         return (
             f"  source: {self.config.source.type}\n"
             f"  extract: {self.config.extract.strategy}\n"
-            f"  chunk: {self.config.chunk.strategy} "
-            f"(max_tokens={self.config.chunk.max_tokens}, "
-            f"overlap={self.config.chunk.overlap})\n"
+            f"  chunk: {chunk_summary}\n"
             f"  embed: {self.config.embed.type}\n"
             f"  index: {index}"
         )
@@ -64,7 +73,10 @@ class PipelineEngine:
         if problems:
             raise ConfigError("\n".join(f"  {p}" for p in problems))
 
-        source = build_source(self.config.source)
+        source = build_source(
+            self.config.source,
+            max_bytes=self.config.extract.max_bytes,
+        )
         extractor = build_extractor(self.config.extract)
         chunker = build_chunker(self.config.chunk)
         embedder = build_embedder(self.config.embed)
