@@ -24,6 +24,7 @@ from pathlib import Path
 from winnow.answer import Answer, Synthesizer, citation_answer
 from winnow.config import ConfigError, PipelineConfig, load_config
 from winnow.core.models import Chunk, SearchHit
+from winnow.docstore import DocStore
 from winnow.factories import build_embedder, build_indexer
 from winnow.index.base import Indexer
 from winnow.pipeline.engine import PipelineEngine, PipelineResult
@@ -42,18 +43,31 @@ async def run_async(
     config: ConfigLike,
     *,
     indexer: Indexer | None = None,
+    incremental: bool = False,
+    state_path: str | Path | None = None,
 ) -> PipelineResult:
-    """Run a single pipeline asynchronously."""
-    return await PipelineEngine(_load(config), indexer=indexer).run()
+    """Run a single pipeline asynchronously.
+
+    With ``incremental=True``, a ``DocStore`` at ``state_path``
+    (default ``.winnow/state.json``) tracks per-source content fingerprints;
+    documents unchanged since the last successful run are skipped.
+    """
+    docstore = None
+    if incremental:
+        docstore = DocStore(Path(state_path) if state_path else DocStore.default_path())
+    return await PipelineEngine(_load(config), indexer=indexer).run(docstore=docstore)
 
 
-def run(config: ConfigLike, *, indexer: Indexer | None = None) -> PipelineResult:
+def run(config: ConfigLike, *, indexer: Indexer | None = None, incremental: bool = False,
+        state_path: str | Path | None = None) -> PipelineResult:
     """Run a single pipeline synchronously (drop-in for celery/scripts).
 
     Wraps ``asyncio.run`` — safe to call from a thread with no running
     event loop.
     """
-    return asyncio.run(run_async(config, indexer=indexer))
+    return asyncio.run(
+        run_async(config, indexer=indexer, incremental=incremental, state_path=state_path)
+    )
 
 
 async def run_many_async(

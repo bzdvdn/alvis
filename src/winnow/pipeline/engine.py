@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
 from winnow.config import ConfigError, PipelineConfig, load_config
 from winnow.core.models import Chunk, Document, content_hash
+from winnow.docstore import DocStore
 from winnow.errors import PipelineError
 from winnow.factories import (
     build_chunker,
@@ -23,12 +26,44 @@ from winnow.sources.base import SourceError
 
 @dataclass
 class PipelineResult:
-    """Summary of a completed pipeline run."""
+    """Summary of a completed pipeline run.
+
+    ``documents_ingested`` counts every document the source reported;
+    ``documents_changed``/``documents_skipped``/``documents_deleted`` break
+    it into what incremental ingestion actually did.
+    """
 
     documents_ingested: int
     chunks_indexed: int
     embed_cache_hits: int = 0
     embed_cache_misses: int = 0
+    documents_changed: int = 0
+    documents_skipped: int = 0
+    documents_deleted: int = 0
+
+
+def pipeline_signature(config: PipelineConfig) -> str:
+    """Fingerprints the transformation stages, not the content.
+
+    Incremental state is stored per (source, signature): the moment extract /
+    chunk / embed settings change, stored fingerprints are treated as stale
+    and the whole source is reprocessed — never silently left un-re-chunked.
+    """
+    payload: dict[str, object] = {
+        "extract": config.extract.strategy,
+        "chunk": {
+            "strategy": config.chunk.strategy,
+            "max_tokens": config.chunk.max_tokens,
+            "overlap": config.chunk.overlap,
+            "max_chars": config.chunk.max_chars,
+            "overlap_chars": config.chunk.overlap_chars,
+        },
+        "embed_type": config.embed.type,
+        "embed_model": config.embed.config.get("model"),
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True).encode("utf-8")
+    ).hexdigest()
 
 
 class PipelineEngine:
@@ -117,8 +152,13 @@ class PipelineEngine:
             return f"{index.type} ({key}={value})"
         return index.type
 
-    async def run(self) -> PipelineResult:
-        """Execute the configured pipeline: source → extract → chunk → embed → index."""
+    async def run(self, *, docstore: DocStore | None = None) -> PipelineResult:
+        """Execute the configured pipeline: source → extract → chunk → embed → index.
+
+        With a ``docstore``, documents whose content fingerprint is unchanged
+        since the last successful run are skipped (no extract/chunk/embed/
+        upsert). State is committed only after the run succeeds.
+        """
         problems = check_pipeline_supported(
             source=self.config.source.type,
             extract=self.config.extract.strategy,
@@ -140,9 +180,13 @@ class PipelineEngine:
             build_indexer(self.config.index) if self.config.index else None
         )
         source_id = source_identity(self.config.source)
+        signature = pipeline_signature(self.config) if docstore is not None else None
 
         documents = 0
         indexed = 0
+        changed = 0
+        skipped = 0
+        deleted = 0
         current: dict[str, str] = {}
         pending: list[tuple[Chunk, str]] = []
         try:
@@ -156,6 +200,15 @@ class PipelineEngine:
             documents += 1
             artifact_hash = content_hash(artifact)
             current[artifact.uri] = artifact_hash
+            if (
+                docstore is not None
+                and signature is not None
+                and docstore.fingerprint(source_id, signature, artifact.uri)
+                == artifact_hash
+            ):
+                skipped += 1
+                continue
+            changed += 1
             try:
                 document: Document = await extractor.extract(artifact)
                 for chunk in await chunker.chunk(document):
@@ -188,9 +241,16 @@ class PipelineEngine:
         if indexer is not None:
             await indexer.reconcile(source_id, current)
 
+        if docstore is not None and signature is not None:
+            deleted = docstore.commit(source_id, signature, current)
+            docstore.save()
+
         return PipelineResult(
             documents_ingested=documents,
             chunks_indexed=indexed,
             embed_cache_hits=getattr(embedder, "cache_hits", 0),
             embed_cache_misses=getattr(embedder, "cache_misses", 0),
+            documents_changed=changed,
+            documents_skipped=skipped,
+            documents_deleted=deleted,
         )

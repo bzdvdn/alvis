@@ -13,6 +13,7 @@ from winnow import __version__
 from winnow.answer import Synthesizer
 from winnow.config import ConfigError, load_config
 from winnow.core.models import CCT_SCHEMA_VERSION
+from winnow.docstore import DocStore
 from winnow.errors import PipelineError
 from winnow.pipeline.engine import PipelineEngine, PipelineResult
 from winnow.pipeline.runner import answer_async, query_async
@@ -178,6 +179,18 @@ def run(
         "--parallel",
         help="Maximum number of pipelines to run concurrently.",
     ),
+    incremental: bool = typer.Option(  # noqa: B008
+        False,
+        "--incremental",
+        "-i",
+        help="Skip documents unchanged since the last successful run.",
+    ),
+    state: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--state",
+        help="Incremental state file (default .winnow/state.json). "
+        "Give distinct paths when running multiple configs in parallel.",
+    ),
 ) -> None:
     """Run the configured ingestion pipeline(s)."""
     if parallel < 1:
@@ -224,7 +237,10 @@ def run(
         async def _one(engine: PipelineEngine) -> PipelineResult | BaseException:
             async with semaphore:
                 try:
-                    return await engine.run()
+                    docstore = None
+                    if incremental:
+                        docstore = DocStore(state or DocStore.default_path())
+                    return await engine.run(docstore=docstore)
                 except (PipelineError, ConfigError) as exc:
                     return exc
 
@@ -241,6 +257,12 @@ def run(
                 f"{config}: {result.documents_ingested} documents, "
                 f"{result.chunks_indexed} chunks indexed"
             )
+            if incremental:
+                typer.echo(
+                    f"  incremental: {result.documents_changed} changed, "
+                    f"{result.documents_skipped} skipped, "
+                    f"{result.documents_deleted} deleted"
+                )
             if result.embed_cache_hits or result.embed_cache_misses:
                 typer.echo(
                     f"  embed cache: {result.embed_cache_hits} hits, "

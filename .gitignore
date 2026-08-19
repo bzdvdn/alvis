@@ -15,3 +15,5 @@ venv/
 .pytest_cache/
 .coverage
 htmlcov/
+# incremental ingestion state
+.winnow/

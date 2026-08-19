@@ -306,6 +306,33 @@ Re-running a pipeline is idempotent: chunk point IDs are deterministic, so
 identical content is overwritten, and a `reconcile` pass prunes points of
 changed or deleted documents (verified live against Qdrant: 6→6 on re-run).
 
+#### Incremental ingestion
+
+Idempotency avoids duplicates; `--incremental` also avoids *work*. Run with
+`--incremental` and unchanged documents are skipped end-to-end (no extract /
+chunk / embed / upsert), reporting the delta:
+
+```text
+$ winnow run pipeline.yaml --incremental
+pipeline.yaml: 12 documents, 1 chunks indexed
+  incremental: 1 changed, 11 skipped, 0 deleted
+```
+
+State lives in `.winnow/state.json` (`--state` to relocate) and is keyed by
+source identity **and** a pipeline signature — changing extract/chunk/embed
+settings invalidates it, so chunks are never silently left stale. State is
+committed only after a successful run, and a failed run leaves the previous
+state intact. Same toggle programmatically:
+
+```python
+run("pipeline.yaml", incremental=True)                    # or state_path="..."
+await run_async(cfg, incremental=True, state_path=".winnow/state.json")
+```
+
+Phase 1 skips processing; downloads still happen. Phase 2 will let connectors
+report a cheap listing fingerprint (S3 ETag, GitLab/GitHub blob sha, Confluence
+version) so unchanged remote objects aren't even fetched.
+
 Transient failures are retried (429/5xx/connection issues) with exponential
 backoff and jitter; `Retry-After` is honored. Per-source/index config accepts
 `retries`, `retry_backoff`, and `verify: false` for self-signed HTTPS (use

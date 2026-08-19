@@ -30,9 +30,11 @@ vectors.
 
 They already are. Chunk point IDs are deterministic, identical content is
 overwritten, and a `reconcile` pass prunes points of changed or deleted
-documents per source identity. Enable the
-[embedding cache](../README.md#embedding-cache) to skip re-embedding unchanged
-chunks.
+documents per source identity. Add `winnow run --incremental` to skip
+unchanged documents end-to-end (no re-extract/chunk/embed/upsert) — the
+delta is reported and state is stored per source + pipeline signature.
+Enable the [embedding cache](../README.md#embedding-cache) to skip
+re-embedding unchanged chunks.
 
 ## Which index should I pick?
 

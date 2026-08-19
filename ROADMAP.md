@@ -57,6 +57,17 @@ Goal: go from "nearest chunks" to a cited answer, the workflow corporate users a
 
 **Done when:** a user asks a natural-language question and gets a cited, grounded answer — with or without an LLM key.
 
+## v0.4 — Incremental ingestion (load only what changed)
+
+Goal: re-runs stop being full re-ingests. Content that didn't change is skipped end-to-end.
+
+- [x] DocStore: per-source document state (uri → content fingerprint) keyed by pipeline signature (extract/chunk/embed settings), committed atomically only after a successful run
+- [x] Skip unchanged documents in the engine (no extract/chunk/embed/upsert); reconcile still keeps their points; delta stats (`changed/skipped/deleted`) in `PipelineResult` + CLI `winnow run --incremental [--state]`
+- [ ] Phase 2: cheap listing fingerprints from connectors (S3 ETag, GitLab/GitHub blob sha, Confluence version) to skip downloads, not just processing
+- [ ] Change-triggered ingestion (git push hook / scheduler) — the `--incremental` run is the primitive they call
+
+**Done when:** a second run of an unchanged corpus ingests zero chunks; a one-file edit ingests exactly that file.
+
 ## v1.0 — Stable Contract
 
 Goal: freeze the public contract — Canonical Content Tree v1 + YAML schema v1.
