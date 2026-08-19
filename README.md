@@ -128,6 +128,77 @@ pipeline is reported and does not stop the others:
 winnow run examples/confluence-qdrant.yaml examples/s3-qdrant.yaml --parallel 2
 ```
 
+### Default pipelines folder
+
+With no paths, `winnow run` scans `winnow/pipelines/*.yaml` (plus a top-level
+`winnow.yaml`) and runs them concurrently — a project keeps its workflows as
+plain files in one folder, ready for a mounted container or a scheduler:
+
+```bash
+winnow/pipelines/
+  confluence.yaml
+  s3.yaml
+winnow run                # runs both, in parallel
+```
+
+### Local companion plugins
+
+Plugins normally ship as installable packages. For uninstalled, in-repo code,
+point `--plugins <dir>` at a directory of `.py` files: each file is loaded and
+expected to assign a module-level `plugin` (a `winnow.plugin.Plugin`) or call
+`install_plugin()` itself. This runs local code, so it is always explicit —
+never auto-scanned:
+
+```bash
+winnow run --plugins ./plugins                 # project-local adapters
+winnow validate catalog.yaml --plugins ./plugins
+winnow plugins --plugins ./plugins             # list them
+```
+
+## Run as a container
+
+Since a pipeline is just YAML, a ready-made image ships the whole product: a
+`winnow` CLI with every optional extra (documents parsers, pgvector,
+observability) built in. You configure it by mounting files — never by
+rebuilding:
+
+```bash
+docker build -t winnow:dev .
+docker run --rm \
+  -v "$PWD/pipeline.yaml:/workspace/pipeline.yaml:ro" \
+  -v "$PWD/corpus:/workspace/corpus:ro" \
+  -v "$PWD/.winnow:/workspace/.winnow" \
+  winnow:dev run --incremental pipeline.yaml
+```
+
+Mount a project instead and the defaults kick in: `winnow/pipelines/*.yaml` is
+scanned with no args, and local adapters load with `--plugins`:
+
+```bash
+docker run --rm -v "$PWD:/workspace" winnow:dev run --plugins ./plugins
+```
+
+CI builds and publishes `bzdvdn/winnow` (linux/amd64 + linux/arm64) for every
+`v*` tag with that tag plus `latest` — so on release you skip the local build
+and just pull:
+
+```bash
+docker pull bzdvdn/winnow:v1.0.0
+```
+
+The image runs as an unprivileged `winnow` user in `/workspace`; incremental
+state lands in `.winnow/state.json` there, so the volume above is what makes
+re-runs skip unchanged content. Point a `--watch` config at a scheduler and the
+container *is* the ingestion loop:
+
+```bash
+docker run -d --name winnow-watcher --restart unless-stopped \
+  -v "$PWD/pipeline.yaml:/workspace/pipeline.yaml:ro" \
+  -v "$PWD/corpus:/workspace/corpus:ro" \
+  -v "$PWD/.winnow:/workspace/.winnow" \
+  winnow:dev run --watch --interval 60 pipeline.yaml
+```
+
 ## Embedding
 
 `embed.type: default` is a deterministic placeholder for local/dev work.

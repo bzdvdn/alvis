@@ -2,11 +2,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from winnow.cli import app
+from winnow.plugin import reset_registry
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _isolated_registry() -> None:
+    reset_registry()
+    yield
+    reset_registry()
 
 
 def test_version() -> None:
@@ -165,3 +174,77 @@ def test_run_dry_run_prints_graph(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "Pipeline graph" in result.output
     assert "▼" in result.output
+
+
+def _fs_pipeline(path: Path) -> str:
+    return (
+        "pipeline:\n"
+        "  source:\n"
+        "    type: fs\n"
+        f"    config:\n      path: {path}\n"
+        "  index:\n"
+        "    type: memory\n"
+    )
+
+
+def test_run_without_configs_scans_workflow_dir(tmp_path: Path, monkeypatch) -> None:
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "a.md").write_text("# A\n\nbody\n", encoding="utf-8")
+    pipelines = tmp_path / "winnow" / "pipelines"
+    pipelines.mkdir(parents=True)
+    (pipelines / "one.yaml").write_text(_fs_pipeline(corpus), encoding="utf-8")
+    (pipelines / "two.yaml").write_text(_fs_pipeline(corpus), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["run"])
+    assert result.exit_code == 0
+    assert "winnow/pipelines/one.yaml: 1 documents" in result.output
+    assert "winnow/pipelines/two.yaml: 1 documents" in result.output
+
+
+def test_run_without_configs_prefers_winnow_yaml(tmp_path: Path, monkeypatch) -> None:
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "a.md").write_text("# A\n\nbody\n", encoding="utf-8")
+    (tmp_path / "winnow.yaml").write_text(_fs_pipeline(corpus), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["run"])
+    assert result.exit_code == 0
+    assert "winnow.yaml: 1 documents" in result.output
+
+
+def test_run_without_configs_errors_when_nothing_found(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["run"])
+    assert result.exit_code == 2
+    assert "winnow init" in result.output
+
+
+def test_validate_accepts_plugin_type_from_local_dir(tmp_path: Path, monkeypatch) -> None:
+    plugins = tmp_path / "plugins"
+    plugins.mkdir()
+    (plugins / "svc_demo.py").write_text(
+        "from winnow.plugin import Plugin\n\n"
+        "def _svc(*, config, max_bytes=None):\n"
+        "    raise NotImplementedError\n\n"
+        'plugin = Plugin(name="svc", version="1.0.0", '
+        'sources={"svc_demo": _svc})\n',
+        encoding="utf-8",
+    )
+    config = tmp_path / "cfg.yaml"
+    config.write_text("pipeline:\n  source:\n    type: svc_demo\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["validate", str(config), "--plugins", str(plugins)])
+    assert result.exit_code == 0
+    assert "source: svc_demo" in result.output
+
+
+def test_validate_rejects_plugin_type_without_flag(tmp_path: Path) -> None:
+    config = tmp_path / "pipeline.yaml"
+    config.write_text("pipeline:\n  source:\n    type: svc_demo\n", encoding="utf-8")
+    result = runner.invoke(app, ["validate", str(config)])
+    assert result.exit_code == 1
+    assert "svc_demo" in result.output

@@ -53,10 +53,13 @@ module) and the YAML schema stays open to new keys.
 
 from __future__ import annotations
 
+import importlib.util
+import sys
 import warnings
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from importlib.metadata import EntryPoint
+from pathlib import Path
 
 KINDS = ("source", "extractor", "chunker", "embedder", "indexer")
 """The five pluggable adapter kinds, used as registry keys."""
@@ -198,6 +201,62 @@ def discover_plugins() -> list[Plugin]:
     return registry().discover()
 
 
+_local_modules: set[tuple[str, str]] = set()
+
+
+def load_local_plugins(paths: Sequence[str | Path] | None) -> list[Plugin]:
+    """Load companion-plugin modules from filesystem directories.
+
+    Companion plugins are plain ``*.py`` files (no packaging step): each file
+    is loaded as an independent module and is expected to either assign a
+    module-level ``plugin: Plugin`` (mirroring plugin packages) or call
+    :func:`install_plugin` itself at import time. Underscore-prefixed files
+    (``_helpers.py``) are skipped.
+
+    This is local, uninstalled code — loading it runs it. The CLI only
+    enables it on the explicit ``--plugins <dir>`` flag, never implicitly.
+    Files must be self-contained; a broken file is skipped with a warning
+    (the same fail-open policy as entry points). Idempotent per directory
+    per file.
+    """
+    loaded = registry()
+    for raw in paths or ():
+        directory = Path(raw)
+        if not directory.is_dir():
+            warnings.warn(
+                f"plugin directory '{directory}' does not exist",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            continue
+        for module_path in sorted(directory.glob("*.py")):
+            if module_path.name.startswith("_"):
+                continue
+            key = (str(directory.resolve()), module_path.name)
+            if key in _local_modules:
+                continue
+            _local_modules.add(key)
+            module_name = f"_winnow_local_{len(_local_modules)}"
+            try:
+                spec = importlib.util.spec_from_file_location(module_name, module_path)
+                if spec is None or spec.loader is None:
+                    raise ImportError(f"no loader for {module_path}")
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[module_name] = module
+                spec.loader.exec_module(module)
+            except Exception as exc:  # any failure in local plugin code
+                warnings.warn(
+                    f"local plugin '{module_path}' failed to load: {exc}",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+                continue
+            plugin = getattr(module, "plugin", None)
+            if isinstance(plugin, Plugin):
+                loaded.install(plugin)
+    return loaded.plugins()
+
+
 def reset_registry() -> None:
     """Drop all installed plugins (test helper)."""
     global _registry
@@ -212,6 +271,7 @@ __all__ = [
     "PluginRegistry",
     "discover_plugins",
     "install_plugin",
+    "load_local_plugins",
     "registry",
     "reset_registry",
 ]

@@ -7,13 +7,10 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 
 from winnow import observability as ob
 from winnow.config import ConfigError, PipelineConfig, load_config
-from winnow.core.models import Chunk, Document, DocumentMeta, content_hash
-from winnow.docstore import DocEntry, DocStore
-from winnow.errors import PipelineError
+from winnow.docstore import DocStore
 from winnow.factories import (
     build_chunker,
     build_embedder,
@@ -23,8 +20,8 @@ from winnow.factories import (
     source_identity,
 )
 from winnow.index.base import Indexer
+from winnow.pipeline.stages import STAGES, RunContext
 from winnow.registry import check_pipeline_supported
-from winnow.sources.base import ListingSource, SourceError
 
 
 @dataclass
@@ -226,7 +223,33 @@ class PipelineEngine:
         return result
 
     async def _execute(self, docstore: DocStore | None = None) -> PipelineResult:
-        """Run the stages without the observability wrapper (see :meth:`run`)."""
+        """Run the pipeline stages without the observability wrapper (see :meth:`run`).
+
+        Adapters and validation live in :meth:`_build_context`; the stages
+        (:mod:`winnow.pipeline.stages`) then share a single :class:`RunContext`
+        and run in a fixed order, each timed as its own ``pipeline_stage_seconds
+        stage=<name>`` sample.
+        """
+        ctx = self._build_context(docstore)
+        for stage in STAGES:
+            if stage.applicable(ctx):
+                with ob.timer(
+                    "pipeline_stage_seconds",
+                    labels=ctx.stage_labels(stage.name),
+                ):
+                    await stage.run(ctx)
+        return PipelineResult(
+            documents_ingested=ctx.documents,
+            chunks_indexed=ctx.indexed,
+            embed_cache_hits=ctx.embed_cache_hits,
+            embed_cache_misses=ctx.embed_cache_misses,
+            documents_changed=ctx.changed,
+            documents_skipped=ctx.skipped,
+            documents_deleted=ctx.deleted,
+        )
+
+    def _build_context(self, docstore: DocStore | None) -> RunContext:
+        """Validate the config and wire the adapters into a fresh :class:`RunContext`."""
         problems = check_pipeline_supported(
             source=self.config.source.type,
             extract=self.config.extract.strategy,
@@ -247,162 +270,16 @@ class PipelineEngine:
         indexer = self._indexer or (
             build_indexer(self.config.index) if self.config.index else None
         )
-        source_id = source_identity(self.config.source)
         signature = pipeline_signature(self.config) if docstore is not None else None
-        list_documents = getattr(source, "list_documents", None)
-        use_listing = docstore is not None and list_documents is not None
-
-        documents = 0
-        indexed = 0
-        changed = 0
-        skipped = 0
-        deleted = 0
-        current: dict[str, str] = {}
-        entries: dict[str, DocEntry] = {}
-        pending: list[tuple[Chunk, str]] = []
-        use_listing = False
-        uri_by_meta: dict[str, DocumentMeta] = {}
-
-        try:
-            if docstore is not None and signature is not None and list_documents is not None:
-                use_listing = True
-                listing_source = cast(ListingSource, source)
-                with ob.timer(
-                    "pipeline_stage_seconds",
-                    labels={**self._metric_labels, "stage": "list"},
-                ):
-                    metas = await listing_source.list_documents()
-                uri_by_meta = {meta.uri: meta for meta in metas}
-                wanted: set[str] = set()
-                for meta in metas:
-                    documents += 1
-                    stored = docstore.entry(source_id, signature, meta.uri)
-                    if (
-                        stored is not None
-                        and stored.listing is not None
-                        and stored.listing == meta.fingerprint
-                    ):
-                        skipped += 1
-                        current[meta.uri] = stored.content
-                        entries[meta.uri] = stored
-                    else:
-                        changed += 1
-                        wanted.add(meta.uri)
-                with ob.timer(
-                    "pipeline_stage_seconds",
-                    labels={**self._metric_labels, "stage": "fetch"},
-                ):
-                    artifacts = await listing_source.fetch(uris=wanted) if wanted else []
-            else:
-                with ob.timer(
-                    "pipeline_stage_seconds",
-                    labels={**self._metric_labels, "stage": "fetch"},
-                ):
-                    artifacts = await source.fetch()
-        except SourceError as exc:
-            raise PipelineError(
-                f"source '{self.config.source.type}' failed: {exc}"
-            ) from exc
-
-        with ob.timer(
-            "pipeline_stage_seconds",
-            labels={**self._metric_labels, "stage": "extract"},
-        ):
-            for artifact in artifacts:
-                artifact_hash = content_hash(artifact)
-                current[artifact.uri] = artifact_hash
-                if not use_listing:
-                    documents += 1
-                    stored = (
-                        docstore.entry(source_id, signature, artifact.uri)
-                        if docstore is not None and signature is not None
-                        else None
-                    )
-                    if stored is not None and stored.content == artifact_hash:
-                        skipped += 1
-                        entries[artifact.uri] = DocEntry(content=artifact_hash)
-                        continue
-                    changed += 1
-                listed = uri_by_meta.get(artifact.uri)
-                entries[artifact.uri] = DocEntry(
-                    content=artifact_hash,
-                    listing=listed.fingerprint if listed is not None else None,
-                )
-                try:
-                    document: Document = await extractor.extract(artifact)
-                    doc_chunks = 0
-                    for chunk in await chunker.chunk(document):
-                        indexed += 1
-                        doc_chunks += 1
-                        if indexer is not None:
-                            enriched = chunk.model_copy(
-                                update={"metadata": {**artifact.metadata, **chunk.metadata}}
-                            )
-                            pending.append((enriched, artifact_hash))
-                    ob.LOG.debug(
-                        "artifact.processed",
-                        extra={
-                            "uri": artifact.uri,
-                            "chunks": doc_chunks,
-                            "bytes": len(artifact.data),
-                        },
-                    )
-                except (SourceError, ValueError) as exc:
-                    raise PipelineError(
-                        f"failed on artifact {artifact.uri}: {exc}"
-                    ) from exc
-
-        if indexer is not None and pending:
-            chunks = [chunk for chunk, _ in pending]
-            try:
-                with ob.timer(
-                    "pipeline_stage_seconds",
-                    labels={**self._metric_labels, "stage": "embed"},
-                ):
-                    vectors = await embedder.embed_batch(chunks)
-                ob.LOG.debug(
-                    "embed.batch",
-                    extra={**self._metric_labels, "chunks": len(chunks)},
-                )
-            except (SourceError, ValueError) as exc:
-                raise PipelineError(f"embedding failed: {exc}") from exc
-            finally:
-                closer = getattr(embedder, "close", None)
-                if callable(closer):
-                    closer()
-            with ob.timer(
-                "pipeline_stage_seconds",
-                labels={**self._metric_labels, "stage": "upsert"},
-            ):
-                for (chunk, artifact_hash), vector in zip(pending, vectors, strict=True):
-                    await indexer.upsert(
-                        chunk,
-                        vector,
-                        source_id=source_id,
-                        artifact_hash=artifact_hash,
-                    )
-
-        if indexer is not None:
-            with ob.timer(
-                "pipeline_stage_seconds",
-                labels={**self._metric_labels, "stage": "reconcile"},
-            ):
-                await indexer.reconcile(source_id, current)
-
-        if docstore is not None and signature is not None:
-            with ob.timer(
-                "pipeline_stage_seconds",
-                labels={**self._metric_labels, "stage": "commit"},
-            ):
-                deleted = docstore.commit(source_id, signature, entries)
-                docstore.save()
-
-        return PipelineResult(
-            documents_ingested=documents,
-            chunks_indexed=indexed,
-            embed_cache_hits=getattr(embedder, "cache_hits", 0),
-            embed_cache_misses=getattr(embedder, "cache_misses", 0),
-            documents_changed=changed,
-            documents_skipped=skipped,
-            documents_deleted=deleted,
+        return RunContext(
+            config=self.config,
+            docstore=docstore,
+            source_id=source_identity(self.config.source),
+            signature=signature,
+            source=source,
+            extractor=extractor,
+            chunker=chunker,
+            embedder=embedder,
+            indexer=indexer,
+            metric_labels=self._metric_labels,
         )

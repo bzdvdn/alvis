@@ -101,8 +101,11 @@ Goal: third parties can extend Winnow without touching the core.
 Goal: Winnow maintains itself; the community drives breadth.
 
 - [ ] Stable plugin API (semver, deprecation window)
+- [x] Deployable container — multi-stage `Dockerfile` (slim base, all extras, non-root `winnow` user, entrypoint `winnow`) ships the product as an image driven purely by mounted YAML; built and smoke-verified (fs → memory, cross-container incremental state)
 - [ ] Managed/hosted offering evaluation (separate distribution, never a fork)
 - [x] Observability hooks — structured logging (JSON/text via `setup_logging`), in-process metrics with optional Prometheus backing (`winnow[observability]`), optional OpenTelemetry spans, `--log-json`/`--log-level` on the CLI
+- [x] Pipeline stage decomposition — orchestration split out of the engine monolith into `winnow.pipeline.stages` (Fetch/Extract/Embed/Upsert/Reconcile/Commit) sharing a `RunContext`, each independently testable and timed as its own `pipeline_stage_seconds stage=<name>` sample; no behavior change (all existing tests + golden green)
+- [x] Project layout defaults — `winnow run` with no paths scans `winnow/pipelines/*.yaml` (+ `./winnow.yaml`) and runs them concurrently; local companion plugins load via an explicit `--plugins <dir>` flag (`winnow.plugin.load_local_plugins`), never implicitly
 - [ ] Performance budget: p99 chunk+embed throughput targets
 
 ---

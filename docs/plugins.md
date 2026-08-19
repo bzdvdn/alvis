@@ -7,6 +7,41 @@ type strings without core changes. See [CONTRIBUTING](../CONTRIBUTING.md) for
 the plugin contract and [examples/kb-plugin](../examples/kb-plugin) for a
 reference implementation.
 
+## Local companion plugins (`--plugins <dir>`)
+
+Not every adapter deserves a package. A directory of plain `.py` files can
+register adapters without packaging or installing: pass it explicitly with
+`--plugins` and each file is loaded as an independent module. A file either
+assigns a module-level `plugin: Plugin` or calls `install_plugin()` itself:
+
+```python
+# plugins/svc_demo.py  — one file, one plugin
+from winnow.plugin import Plugin
+
+def _svc(*, config, max_bytes=None) -> object:
+    ...
+
+plugin = Plugin(
+    name="svc-demo",
+    version="0.0.1",
+    sources={"svc_demo": _svc},
+)
+```
+
+```bash
+winnow validate catalog.yaml --plugins ./plugins
+winnow run --plugins ./plugins
+winnow plugins --plugins ./plugins          # lists it too
+```
+
+Conventions and guarantees:
+
+- Underscore-prefixed files (`_helpers.py`) are ignored.
+- Every file must be self-contained; a file that fails to import is skipped
+  with a warning (same fail-open policy as entry points).
+- Each `(directory, file)` pair is loaded once per process.
+- This executes your local code, so it is opt-in by flag and never implicit.
+
 ## Built-in adapters (shipped with Winnow)
 
 | kind      | type                        | notes                                    |

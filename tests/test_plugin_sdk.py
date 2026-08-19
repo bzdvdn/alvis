@@ -17,7 +17,14 @@ from winnow import dsl, run_async
 from winnow.config.models import SourceConfig
 from winnow.factories import build_source
 from winnow.index import MemoryIndex
-from winnow.plugin import Plugin, PluginRegistry, install_plugin, reset_registry
+from winnow.plugin import (
+    Plugin,
+    PluginRegistry,
+    install_plugin,
+    load_local_plugins,
+    registry,
+    reset_registry,
+)
 from winnow.registry import check_pipeline_supported
 
 _EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "kb-plugin"
@@ -110,3 +117,54 @@ def test_duplicate_type_registration_is_rejected() -> None:
 
 def test_discovery_uses_the_process_registry_reset_clean() -> None:
     assert PluginRegistry().known_types("source") == set()
+
+
+def _write_local_plugin(directory: Path, name: str, source_type: str) -> Path:
+    module = directory / f"{name}.py"
+    module.write_text(
+        "from winnow.plugin import Plugin\n"
+        "\n"
+        f"def _svc(*, config, max_bytes=None):\n"
+        "    raise NotImplementedError\n"
+        "\n"
+        f'plugin = Plugin(name="{name}", version="1.0.0", '
+        f'sources={{"{source_type}": _svc}})\n',
+        encoding="utf-8",
+    )
+    return module
+
+
+def test_load_local_plugins_registers_types(tmp_path: Path) -> None:
+    _write_local_plugin(tmp_path, "svc_demo", source_type="svc_demo")
+    loaded = load_local_plugins([tmp_path])
+    assert [p.name for p in loaded] == ["svc_demo"]
+    assert len(load_local_plugins([tmp_path])) == 1  # re-run does not re-import
+
+
+def test_load_local_plugins_skips_broken_and_underscore_files(
+    tmp_path: Path, recwarn: pytest.WarningsRecorder
+) -> None:
+    _write_local_plugin(tmp_path, "svc_ok", source_type="svc_ok")
+    (tmp_path / "_helpers.py").write_text(
+        "raise RuntimeError('never imported')\n", encoding="utf-8"
+    )
+    (tmp_path / "broken.py").write_text("raise ValueError('boom')\n", encoding="utf-8")
+    loaded = load_local_plugins([tmp_path])
+    assert [p.name for p in loaded] == ["svc_ok"]
+    assert len(recwarn) == 1
+    assert "broken.py" in str(recwarn.pop().message)
+
+
+def test_load_local_plugins_accepts_install_plugin_convention(tmp_path: Path) -> None:
+    (tmp_path / "explicit.py").write_text(
+        "from winnow.plugin import Plugin, install_plugin, registry\n"
+        "\n"
+        "def _svc(*, config, max_bytes=None):\n"
+        "    raise NotImplementedError\n"
+        "\n"
+        'install_plugin(Plugin(name="explicit", version="1.0.0", '
+        'sources={"explicit_svc": _svc}))\n',
+        encoding="utf-8",
+    )
+    load_local_plugins([tmp_path])
+    assert "explicit_svc" in registry().known_types("source")

@@ -20,7 +20,7 @@ from winnow.errors import PipelineError
 from winnow.observability import setup_logging
 from winnow.pipeline.engine import PipelineEngine, PipelineResult
 from winnow.pipeline.runner import answer_async, query_async
-from winnow.plugin import KINDS, discover_plugins
+from winnow.plugin import KINDS, Plugin, discover_plugins, load_local_plugins, registry
 from winnow.registry import check_pipeline_supported
 
 app = typer.Typer(
@@ -28,6 +28,36 @@ app = typer.Typer(
     help="No-code framework for building corporate knowledge bases.",
     no_args_is_help=True,
 )
+
+PIPELINES_DIR = Path("winnow/pipelines")
+"""Default folder scanned for pipeline YAML configs when none are given."""
+
+
+def _default_configs() -> list[Path]:
+    """Configs resolved when no paths are passed: ``winnow.yaml`` + ``winnow/pipelines/*.yaml``."""
+    top = [Path("winnow.yaml")] if Path("winnow.yaml").is_file() else []
+    return sorted([*top, *PIPELINES_DIR.glob("*.yaml")])
+
+
+def _resolve_configs(configs: list[Path] | None) -> list[Path]:
+    if configs:
+        return configs
+    found = _default_configs()
+    if not found:
+        raise typer.BadParameter(
+            "no configs given and none in winnow/pipelines/ or ./winnow.yaml"
+            " (run 'winnow init' or pass config paths)"
+        )
+    return found
+
+
+def _enable_plugins(plugin_dirs: list[Path] | None) -> list[Plugin]:
+    """Discover installed entry points, then load explicit local plugin dirs."""
+    discover_plugins()
+    if plugin_dirs:
+        load_local_plugins(plugin_dirs)
+    return list(registry().plugins())
+
 
 _DEFAULT_PIPELINE = """\
 pipeline:
@@ -96,9 +126,15 @@ def init(
 
 
 @app.command()
-def plugins() -> None:
-    """List installed plugins discovered via entry points."""
-    installed = discover_plugins()
+def plugins(
+    plugin_dirs: list[Path] = typer.Option(  # noqa: B008
+        None,
+        "--plugins",
+        help="Directories of local companion-plugin .py files to load.",
+    ),
+) -> None:
+    """List installed plugins discovered via entry points (and --plugins dirs)."""
+    installed = _enable_plugins(plugin_dirs)
     if not installed:
         typer.echo("No plugins discovered (entry-point group: winnow.plugins).")
         return
@@ -113,6 +149,11 @@ def plugins() -> None:
 @app.command()
 def validate(
     config: str = typer.Argument(..., help="Path to the pipeline YAML config."),  # noqa: B008
+    plugin_dirs: list[Path] = typer.Option(  # noqa: B008
+        None,
+        "--plugins",
+        help="Directories of local companion-plugin .py files to load.",
+    ),
     json_output: bool = typer.Option(  # noqa: B008
         False,
         "--json",
@@ -120,7 +161,7 @@ def validate(
     ),
 ) -> None:
     """Validate the pipeline YAML config and print a report."""
-    discover_plugins()
+    _enable_plugins(plugin_dirs)
     try:
         pipeline = load_config(config)
     except ConfigError as exc:
@@ -186,8 +227,14 @@ def validate(
 @app.command()
 def run(
     configs: list[Path] = typer.Argument(  # noqa: B008
-        ...,
-        help="Paths to pipeline YAML configs. Multiple paths run in parallel.",
+        None,
+        help="Paths to pipeline YAML configs. Default: winnow/pipelines/*.yaml "
+        "plus ./winnow.yaml. Multiple paths run in parallel.",
+    ),
+    plugin_dirs: list[Path] = typer.Option(  # noqa: B008
+        None,
+        "--plugins",
+        help="Directories of local companion-plugin .py files to load.",
     ),
     dry_run: bool = typer.Option(  # noqa: B008
         False,
@@ -246,11 +293,12 @@ def run(
     if interval <= 0:
         typer.echo("Error: --interval must be > 0", err=True)
         raise typer.Exit(2)
-    discover_plugins()
+    _enable_plugins(plugin_dirs)
     if watch and not incremental:
         incremental = True
         typer.echo("--watch implies --incremental; enabling incremental mode.")
 
+    configs = _resolve_configs(configs)
     engines: list[PipelineEngine] = []
     for config in configs:
         try:
@@ -358,6 +406,11 @@ def query(
         ...,
         help="Path to the pipeline YAML config (uses its embed + index stages).",
     ),
+    plugin_dirs: list[Path] = typer.Option(  # noqa: B008
+        None,
+        "--plugins",
+        help="Directories of local companion-plugin .py files to load.",
+    ),
     text: str = typer.Option(  # noqa: B008
         ...,
         "--text",
@@ -392,6 +445,7 @@ def query(
     ),
 ) -> None:
     """Retrieve the chunks closest to --text (or synthesize an answer)."""
+    _enable_plugins(plugin_dirs)
     try:
         if answer:
             llm = None
