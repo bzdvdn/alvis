@@ -392,6 +392,31 @@ Re-running a pipeline is idempotent: chunk point IDs are deterministic, so
 identical content is overwritten, and a `reconcile` pass prunes points of
 changed or deleted documents (verified live against Qdrant: 6→6 on re-run).
 
+#### Payload contract
+
+The Qdrant payload splits into a reserved system namespace and your own
+metadata. Keys beginning with `__` are owned by the engine and drive dedup,
+incremental skip, and the per-source `reconcile` pass:
+
+| key              | meaning                                                            |
+| ---------------- | ------------------------------------------------------------------ |
+| `__text`         | chunk text (returned by `SearchHit.text`)                          |
+| `__uri`          | source URI — provenance (returned by `SearchHit.source_uri`)       |
+| `__source`       | source identity, namespaces the `reconcile` prune                   |
+| `__hash`         | content hash, powers skip-unchanged and prune                       |
+| `__document_id`  | stable document identity for citations/per-doc rules                |
+| `__schema`       | payload schema version (currently 1)                                |
+
+Everything else is your namespace: metadata is written verbatim and returned
+in `SearchHit.metadata`. The engine reserves the `__` prefix — metadata keys
+starting with `__` are rejected on write so user data can never overwrite
+system fields. A metadata key named `documentId` (or `document_id`) is
+promoted to `__document_id`; sources with a natural stable id declare it
+(GitLab/GitHub blob id, Confluence page id) so renames update the document in
+place instead of replacing it. Collections indexed before this contract store
+the old flat keys — drop the collection once and re-run `winnow run` to
+rebuild under the versioned schema.
+
 #### Incremental ingestion
 
 Idempotency avoids duplicates; `--incremental` also avoids *work*. Run with

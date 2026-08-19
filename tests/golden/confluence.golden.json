@@ -3,6 +3,7 @@
     "content_type": "text/html",
     "data": "<h1>Winnow Overview</h1><p>Winnow is a no-code knowledge ingestion engine.</p>",
     "metadata": {
+      "documentId": "100",
       "id": "100",
       "title": "Winnow Overview",
       "version": 3
@@ -14,6 +15,7 @@
     "content_type": "text/html",
     "data": "<h1>Chunking Strategy Guide</h1><p>Documents are split into overlapping chunks.</p>",
     "metadata": {
+      "documentId": "101",
       "id": "101",
       "title": "Chunking Strategy Guide",
       "version": 1

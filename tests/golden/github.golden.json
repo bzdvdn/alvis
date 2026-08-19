@@ -3,6 +3,7 @@
     "content_type": "text/markdown",
     "data": "# Intro from GitHub",
     "metadata": {
+      "documentId": "abc123",
       "html_url": "https://github.com/acme/kb/blob/main/docs/intro.md",
       "path": "docs/intro.md",
       "title": "intro.md"

@@ -108,6 +108,7 @@ class GitLabSource:
                     metadata={
                         "path": file_path,
                         "title": file_path.rsplit("/", 1)[-1],
+                        "documentId": item["id"],
                     },
                 )
             )

@@ -3,6 +3,7 @@
     "content_type": "text/markdown",
     "data": "# Guide from GitLab",
     "metadata": {
+      "documentId": "blob-a",
       "path": "docs/guide.md",
       "title": "guide.md"
     },

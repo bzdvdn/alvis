@@ -23,6 +23,7 @@ Frozen at `1.0.0`. No *breaking* change ships for these names without a
 | ----------------------------------------------------------------------- | ------------------------------------------------------------- |
 | `winnow.plugin` / `winnow.plugin.Plugin`, entry-point group             | plugin SDK: `Plugin` + per-kind factory contract, discovery   |
 | `winnow.config` (load, models)                                          | YAML schema v1 payloads load unchanged (RFC-first schema v2)  |
+| indexed payloads (`__`-prefixed system fields, `__schema`)            | storage keys are versioned by `__schema`; re-index on bump    |
 | `winnow.core.models` (CCT)                                              | `Document`/`Chunk`/`Artifact`/`SearchHit` construction         |
 | `winnow.pipeline.PipelineEngine`, `.PipelineResult`, `winnow.run_*`     | programmatic run + result/delta fields                        |
 | `winnow.factories.build_*`, `winnow.sources` / `winnow.chunk` / `winnow.embed` / `winnow.index` bases | adapter construction + adapter protocol signatures            |

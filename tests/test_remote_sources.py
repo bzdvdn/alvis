@@ -63,6 +63,7 @@ async def test_github_fetches_blobs_and_filters() -> None:
         "text/markdown",
         "text/plain",
     }
+    assert artifacts[0].metadata["documentId"] == "abc"
 
 
 async def test_github_include_globs() -> None:
@@ -123,6 +124,7 @@ async def test_gitlab_fetches_raw_blobs_and_encodes_project() -> None:
     assert len(artifacts) == 1
     assert artifacts[0].data == b"# Self hosted"
     assert artifacts[0].metadata["path"] == "docs/intro.md"
+    assert artifacts[0].metadata["documentId"] == "a"
     assert artifacts[0].uri == (
         "https://gitlab.example.com/group/kb/-/blob/main/docs/intro.md"
     )
@@ -147,6 +149,7 @@ async def test_gitlab_pagination() -> None:
     artifacts = await source.fetch()
     assert len(artifacts) == 3
     assert [a.metadata["path"] for a in artifacts] == ["f0.md", "f1.md", "extra.md"]
+    assert [a.metadata["documentId"] for a in artifacts] == ["s0", "s1", "e"]
 
 
 def _s3_xml(keys: list[str], *, truncated: bool, token: str | None = None) -> bytes:

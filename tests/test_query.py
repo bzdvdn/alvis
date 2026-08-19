@@ -111,11 +111,13 @@ async def test_qdrant_search_parses_results_and_scores() -> None:
                         "id": "111",
                         "score": 0.9123,
                         "payload": {
-                            "text": "hello world",
-                            "source_uri": "s3://a",
+                            "__text": "hello world",
+                            "__uri": "s3://a",
+                            "__document_id": "s3://a",
                             "heading": "H",
-                            "_source": "s3",
-                            "artifact_hash": "h",
+                            "__source": "s3",
+                            "__hash": "h",
+                            "__schema": 1,
                         },
                     }
                 ]

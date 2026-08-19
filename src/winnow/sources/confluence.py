@@ -80,6 +80,7 @@ class ConfluenceSource:
                     metadata={
                         "title": page["title"],
                         "id": page_id,
+                        "documentId": page_id,
                         "version": page.get("version", {}).get("number"),
                     },
                 )

@@ -98,6 +98,7 @@ class GitHubSource:
                         "path": file_path,
                         "title": file_path.rsplit("/", 1)[-1],
                         "html_url": info.get("html_url") or "",
+                        "documentId": item["sha"],
                     },
                 )
             )
