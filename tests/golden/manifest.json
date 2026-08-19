@@ -1,0 +1,9 @@
+{
+  "sources": {
+    "fs": "tests/test_golden_sources.py",
+    "confluence": "tests/test_golden_sources.py",
+    "github": "tests/test_golden_sources.py",
+    "gitlab": "tests/test_golden_sources.py",
+    "s3": "tests/test_golden_sources.py"
+  }
+}

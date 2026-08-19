@@ -1,0 +1,12 @@
+[
+  {
+    "content_type": "text/markdown",
+    "data": "# Guide from GitLab",
+    "metadata": {
+      "path": "docs/guide.md",
+      "title": "guide.md"
+    },
+    "step_id": "blob-a",
+    "uri": "https://gitlab.example.com/group/kb/-/blob/main/docs/guide.md"
+  }
+]

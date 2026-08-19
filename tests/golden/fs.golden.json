@@ -1,0 +1,32 @@
+[
+  {
+    "content_type": "text/csv",
+    "data": "name,team\nada,core\ngrace,platform\n",
+    "metadata": {
+      "path": "<root>/data.csv",
+      "title": "data"
+    },
+    "step_id": "<root>/data.csv",
+    "uri": "<root>/data.csv"
+  },
+  {
+    "content_type": "text/markdown",
+    "data": "# Onboarding Guide\n\nWinnow ingests documents from many sources and turns them into a searchable\ncorpus.\n\n## First run\n\nWrite a pipeline file, then run `winnow run pipeline.yaml`.\n\n## Health check\n\n`winnow validate pipeline.yaml` checks the config before running.\n",
+    "metadata": {
+      "path": "<root>/guide.md",
+      "title": "guide"
+    },
+    "step_id": "<root>/guide.md",
+    "uri": "<root>/guide.md"
+  },
+  {
+    "content_type": "text/plain",
+    "data": "plain notes file\n\nused by the filesystem source golden test\n",
+    "metadata": {
+      "path": "<root>/notes.txt",
+      "title": "notes"
+    },
+    "step_id": "<root>/notes.txt",
+    "uri": "<root>/notes.txt"
+  }
+]

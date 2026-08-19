@@ -1,0 +1,13 @@
+[
+  {
+    "content_type": "text/markdown",
+    "data": "# Intro from GitHub",
+    "metadata": {
+      "html_url": "https://github.com/acme/kb/blob/main/docs/intro.md",
+      "path": "docs/intro.md",
+      "title": "intro.md"
+    },
+    "step_id": "abc123",
+    "uri": "https://github.com/acme/kb/blob/main/docs/intro.md"
+  }
+]

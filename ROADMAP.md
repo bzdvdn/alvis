@@ -36,9 +36,9 @@ Goal: a runnable skeleton with a real hello-world path (Confluence → Qdrant) d
 
 Goal: attract first contributors and prove the plugin contract.
 
-- [ ] Docs site (README → docs/: getting started, FAQ)
-- [ ] `CONTRIBUTING.md`: "how to write a connector" as the cover page
-- [ ] Connector fixture + golden-test requirements enforced in CI
+- [x] Docs site (README → docs/: getting started, FAQ)
+- [x] `CONTRIBUTING.md`: "how to write a connector" as the cover page
+- [x] Connector fixture + golden-test requirements enforced in CI
 - [x] Format parsers: Markdown, HTML (from Confluence export); PDF/DOCX/XLSX (done in v0.1 via `winnow[documents]`)
 - [x] CLI polish: structured output, exit codes, `--dry-run` (multi-config `run --parallel`)
 - [ ] First external connector PRs (pgvector backend or GitLab source)

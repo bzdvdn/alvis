@@ -1,0 +1,60 @@
+# FAQ
+
+## What is Winnow?
+
+A no-code knowledge ingestion and retrieval engine. It turns heterogeneous
+sources (GitLab, Confluence, S3, local files) and formats (Markdown, HTML,
+PDF, DOCX, XLSX, CSV) into a searchable vector index, driven entirely by a
+YAML pipeline descriptor — no Python required.
+
+## What stages does a pipeline have?
+
+`source → extract → chunk → embed → index`. YAML describes them
+declaratively; the engine builds the adapters. Only `source` is required;
+missing stages use defaults.
+
+## Which sources are built in?
+
+`fs`, `confluence`, `github`, `gitlab` (self-hosted via `url`), and `s3`
+(SigV4, no boto3, MinIO-compatible). See the README source table for config
+keys. New sources are connectors — see the
+[contributing guide](../CONTRIBUTING.md).
+
+## Do I need a GPU or an API key to try it?
+
+No. `embed.type: default` is a deterministic local placeholder. Add
+`embed.type: openai` (any OpenAI-compatible endpoint) when you want real
+vectors.
+
+## How do I make re-runs idempotent?
+
+They already are. Chunk point IDs are deterministic, identical content is
+overwritten, and a `reconcile` pass prunes points of changed or deleted
+documents per source identity. Enable the
+[embedding cache](../README.md#embedding-cache) to skip re-embedding unchanged
+chunks.
+
+## Which index should I pick?
+
+- `memory` — tests and prototypes.
+- `qdrant` — the default for real use (`url`, `collection`).
+- `pgvector` — PostgreSQL + pgvector (`winnow[pgindex]`).
+
+## The embedder is deterministic. Is that real?
+
+For dev/test, yes by design. For production vectors use `openai` (compatible
+with OpenAI, Azure, or a local server like Ollama). The abstraction is
+model-agnostic, so switching requires an embedder that implements the same
+`Embedder` protocol.
+
+## Can I suppress retries or verify TLS?
+
+Each source/index accepts `retries`, `retry_backoff`, and `verify`. Use
+`verify: false` only against trusted internal endpoints with self-signed
+certificates.
+
+## Where do I report a bug or request a source?
+
+Open an issue on the repository. When contributing a connector, follow the
+process in [CONTRIBUTING.md](../CONTRIBUTING.md) — a connector lands only with
+its test fixture and golden test.

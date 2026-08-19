@@ -1,0 +1,24 @@
+[
+  {
+    "content_type": "text/html",
+    "data": "<h1>Winnow Overview</h1><p>Winnow is a no-code knowledge ingestion engine.</p>",
+    "metadata": {
+      "id": "100",
+      "title": "Winnow Overview",
+      "version": 3
+    },
+    "step_id": "100",
+    "uri": "/pages/viewpage.action?pageId=100"
+  },
+  {
+    "content_type": "text/html",
+    "data": "<h1>Chunking Strategy Guide</h1><p>Documents are split into overlapping chunks.</p>",
+    "metadata": {
+      "id": "101",
+      "title": "Chunking Strategy Guide",
+      "version": 1
+    },
+    "step_id": "101",
+    "uri": "/pages/viewpage.action?pageId=101"
+  }
+]

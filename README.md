@@ -1,6 +1,6 @@
 # Winnow
 
-No-code knowledge ingestion and retrieval engine. Build corporate knowledge bases from heterogeneous sources (GitLab, Confluence, S3; Markdown, HTML, PDF, DOCX, XLSX, CSV) without writing Python.
+Knowledge ingestion and retrieval engine. Build corporate knowledge bases from heterogeneous sources (GitLab, Confluence, S3; Markdown, HTML, PDF, DOCX, XLSX, CSV) driven by a YAML pipeline — or described from Python with the typed DSL.
 
 ```
 Source → Artifact → Extraction → Canonical Content Tree → Chunking → Embedding → Index
@@ -255,8 +255,9 @@ the per-source `reconcile` pass does not prune each other's points.
 
 ## Describing pipelines in Python
 
-YAML is for the no-code UI; a thin typed DSL ("no config strings") builds the
-exact same config objects, so a Python pipeline validates, dry-runs, and runs
+YAML is the declarative interface (no code at all); the typed Python DSL
+("no config strings") is a first-class way to describe the exact same
+pipeline from code, so a Python pipeline validates, dry-runs, and runs
 identically to its YAML twin:
 
 ```python
@@ -296,10 +297,13 @@ the latter only against trusted internal endpoints).
 
 ## Documentation
 
+- [Getting started](docs/getting-started.md) — install, first pipeline, first index
+- [Docs index](docs/) — full docs site (getting started, FAQ, DSL, schema)
+- [FAQ](docs/faq.md) — short answers to common questions
+- [Contributing](CONTRIBUTING.md) — how to write a connector (cover page: connector fixture + golden tests)
+- [Python DSL guide](docs/dsl.md) — describing pipelines from code
 - [Constitution](CONSTITUTION.md) — purpose, scope, open-source strategy
 - [Roadmap](ROADMAP.md) — build plan
-- [Python DSL guide](docs/dsl.md) — describing pipelines from code
-- `docs/` — guides (getting started, contributor guide, in progress)
 
 ## License
 

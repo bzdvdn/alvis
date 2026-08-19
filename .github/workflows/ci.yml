@@ -29,3 +29,21 @@ jobs:
 
       - name: Tests (pytest)
         run: pytest
+
+  golden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Golden tests (read-only snapshots)
+        run: pytest -m golden
+
+      - name: Golden coverage (every connector ships fixture + snapshot)
+        run: python scripts/check_golden_coverage.py

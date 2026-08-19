@@ -2,7 +2,7 @@
 
 **Project Constitution**
 
-**Version:** 1.1.0  
+**Version:** 1.2.0  
 **Status:** Architecture baseline  
 **Language:** Python 3.12+  
 **Primary backends:** Qdrant, PostgreSQL/pgvector  
@@ -33,7 +33,11 @@ The core pipeline:
       ↓
     Index
 
-The framework must allow users to assemble an ingestion pipeline without writing Python code.
+The framework must allow users to assemble an ingestion pipeline declaratively,
+without writing Python code — a YAML descriptor must be sufficient for any
+pipeline (no-code by default). The typed Python DSL (`winnow.dsl`) is a
+first-class alternative that produces the exact same config contract, and is
+verified to run identically to its YAML twin.
 
 Example:
 
@@ -78,7 +82,7 @@ Winnow is distributed and developed as an open-source project.
 
 ## Principles
 - **Framework, not app.** The core must stay source/format-agnostic; all integration lives behind pluggable adapters.
-- **No-code by default.** Users assemble pipelines via YAML; Python is only needed for plugin SDK extensions.
+- **Declarative by default.** Users assemble pipelines via YAML; the typed Python DSL is a first-class alternative with the same contract. Python remains the language for plugin SDK extensions.
 - **First impression wins.** Time-to-hello-world is a hard quality gate: `pip install winnow` + one YAML must produce a running index.
 
 ## License

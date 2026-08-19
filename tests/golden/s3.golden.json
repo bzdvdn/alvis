@@ -1,0 +1,13 @@
+[
+  {
+    "content_type": "text/markdown",
+    "data": "# Intro from S3",
+    "metadata": {
+      "bucket": "kb",
+      "path": "docs/intro.md",
+      "title": "intro.md"
+    },
+    "step_id": "96daa3fc51249aa702699894a82dc58c4ae900718454aed04f3f610ea35641d7",
+    "uri": "http://localhost:9000/kb/docs/intro.md"
+  }
+]

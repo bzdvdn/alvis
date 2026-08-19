@@ -64,6 +64,9 @@ packages = ["src/winnow"]
 testpaths = ["tests"]
 addopts = "-q"
 asyncio_mode = "auto"
+markers = [
+    "golden: connector golden-snapshot test (run via pytest -m golden)",
+]
 
 [tool.ruff]
 line-length = 100
