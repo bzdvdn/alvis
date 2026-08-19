@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from winnow import observability as ob
+import winnow.observability as ob
 from winnow.config import ConfigError, PipelineConfig, load_config
 from winnow.docstore import DocStore
 from winnow.factories import (

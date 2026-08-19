@@ -21,7 +21,7 @@ def _isolated_registry() -> None:
 def test_version() -> None:
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert result.output.strip() == "winnow 0.1.0"
+    assert result.output.strip() == "winnow 0.6.0"
 
 
 def test_validate_ok(tmp_path: Path) -> None:

@@ -7,6 +7,7 @@ core change, which is exactly the roadmap's "done" criteria for a side project.
 
 from __future__ import annotations
 
+import inspect
 import sys
 from importlib.metadata import EntryPoint
 from pathlib import Path
@@ -18,6 +19,7 @@ from winnow.config.models import SourceConfig
 from winnow.factories import build_source
 from winnow.index import MemoryIndex
 from winnow.plugin import (
+    KINDS,
     Plugin,
     PluginRegistry,
     install_plugin,
@@ -168,3 +170,86 @@ def test_load_local_plugins_accepts_install_plugin_convention(tmp_path: Path) ->
     )
     load_local_plugins([tmp_path])
     assert "explicit_svc" in registry().known_types("source")
+
+
+_FACTORY_CONTRACT = {
+    "source": frozenset({"config", "max_bytes"}),
+    "extractor": frozenset({"config"}),
+    "chunker": frozenset({"config"}),
+    "embedder": frozenset({"config"}),
+    "indexer": frozenset({"config"}),
+}
+
+
+def assert_factory_contract(kind: str, type_str: str, factory) -> None:
+    """The documented factory contract: keyword-only, required ``config``."""
+    params = inspect.signature(factory).parameters
+    name = f"{kind}::{type_str}"
+    bad_kind = [p for p in params.values() if p.kind != inspect.Parameter.KEYWORD_ONLY]
+    assert not bad_kind, f"{name} has non-keyword-only params: {[p.name for p in bad_kind]}"
+    expected = _FACTORY_CONTRACT[kind]
+    assert params.keys() <= expected, (
+        f"{name} exposes unexpected params {sorted(params.keys() - expected)}"
+    )
+    assert "config" in params, f"{name} is missing required param 'config'"
+    if "max_bytes" in params:
+        assert params["max_bytes"].default is None, f"{name} max_bytes default must be None"
+
+
+def _mk(kind: str):
+    if kind == "source":
+
+        def _factory(*, config, max_bytes=None):
+            return kind
+
+    else:
+
+        def _factory(*, config):
+            return kind
+
+    return _factory
+
+
+@pytest.mark.parametrize("kind", ["source", "extractor", "chunker", "embedder", "indexer"])
+def test_plugin_factory_contract(kind: str) -> None:
+    reg = PluginRegistry()
+    reg.install(_install_example())  # reference plugin: source with compliant signature
+    for candidate_kind in KINDS:
+        reg.install(
+            Plugin(
+                name=f"contract-{candidate_kind}",
+                version="1.0.0",
+                **{
+                    {
+                        "source": "sources",
+                        "extractor": "extractors",
+                        "chunker": "chunkers",
+                        "embedder": "embedders",
+                        "indexer": "indexers",
+                    }[candidate_kind]: {
+                        f"ct_{candidate_kind}": _mk(candidate_kind)
+                    }
+                },
+            )
+        )
+    factories = [
+        (type_str, factory)
+        for plugin in reg.plugins()
+        for type_str, factory in plugin.provided_types(kind).items()
+    ]
+    assert factories, f"expected a {kind} factory to register"
+    for type_str, factory in factories:
+        assert_factory_contract(kind, type_str, factory)
+
+
+@pytest.mark.parametrize(
+    "kind, factory",
+    [
+        ("source", lambda config, *, max_bytes=None: object()),  # positional config
+        ("chunker", lambda *, cfg: object()),  # wrong param name
+        ("embedder", lambda **kwargs: object()),  # var-keyword only, no config
+    ],
+)
+def test_plugin_factory_contract_rejects_violations(kind: str, factory) -> None:
+    with pytest.raises(AssertionError):
+        assert_factory_contract(kind, "bad", factory)

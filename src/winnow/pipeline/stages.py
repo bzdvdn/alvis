@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import cast
 
-from winnow import observability as ob
+import winnow.observability as ob
 from winnow.chunk.auto import Chunker
 from winnow.config import PipelineConfig
 from winnow.core.models import Artifact, Chunk, Document, DocumentMeta, content_hash

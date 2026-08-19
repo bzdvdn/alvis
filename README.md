@@ -9,7 +9,7 @@ Source → Artifact → Extraction → Canonical Content Tree → Chunking → E
 
 ## Status
 
-Alpha (v0.1.0). Core pipeline runs end-to-end: fs/Confluence/GitHub/GitLab/S3 sources → extract → chunk → embed → memory/Qdrant/pgvector index, plus vector retrieval (`winnow.query`, CLI `winnow query`). Async-native (httpx). The embedder ships a deterministic placeholder (`default`) plus an OpenAI-compatible API adapter (`openai`).
+v0.6.0. Core pipeline runs end-to-end: fs/Confluence/GitHub/GitLab/S3 sources → extract → chunk → embed → memory/Qdrant/pgvector index, plus vector retrieval (`winnow.query`, CLI `winnow query`). Async-native (httpx). The embedder ships a deterministic placeholder (`default`) plus an OpenAI-compatible API adapter (`openai`).
 
 ## Formats
 

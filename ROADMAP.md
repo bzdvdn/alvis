@@ -106,6 +106,7 @@ Goal: Winnow maintains itself; the community drives breadth.
 - [x] Observability hooks — structured logging (JSON/text via `setup_logging`), in-process metrics with optional Prometheus backing (`winnow[observability]`), optional OpenTelemetry spans, `--log-json`/`--log-level` on the CLI
 - [x] Pipeline stage decomposition — orchestration split out of the engine monolith into `winnow.pipeline.stages` (Fetch/Extract/Embed/Upsert/Reconcile/Commit) sharing a `RunContext`, each independently testable and timed as its own `pipeline_stage_seconds stage=<name>` sample; no behavior change (all existing tests + golden green)
 - [x] Project layout defaults — `winnow run` with no paths scans `winnow/pipelines/*.yaml` (+ `./winnow.yaml`) and runs them concurrently; local companion plugins load via an explicit `--plugins <dir>` flag (`winnow.plugin.load_local_plugins`), never implicitly
+- [x] Production hardening — version 0.6.0; CONSTITUTION aligned to reality (Python 3.10+, as CI/pyproject); import-cycle-free module layout (verified by dependency analyzer); plugin factory contract tests (keyword-only signatures); pytest coverage gate ≥90% + `pip-audit` job in CI
 - [ ] Performance budget: p99 chunk+embed throughput targets
 
 ---

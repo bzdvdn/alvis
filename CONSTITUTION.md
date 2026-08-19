@@ -4,7 +4,7 @@
 
 **Version:** 1.2.0  
 **Status:** Architecture baseline  
-**Language:** Python 3.12+  
+**Language:** Python 3.10+  
 **Primary backends:** Qdrant, PostgreSQL/pgvector  
 **Primary sources:** GitLab, Confluence, S3  
 **Primary formats:** Markdown, HTML, PDF, DOCX, XLSX, CSV, source code
