@@ -64,28 +64,20 @@ metrics = Metrics(use_prometheus=True)
 configure_observability(metrics=metrics)
 ```
 
-Scrape them — e.g. from the smallest HTTP endpoint imaginable:
+The CLI exposes any metric store over HTTP without writing a line of Python.
+Scrape it from Prometheus, or hit it by hand (see
+[docs/status.md](status.md) for the operator view):
 
-```python
-from http.server import BaseHTTPRequestHandler, HTTPServer
-
-from winnow.observability import get_metrics
-
-
-class MetricsHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        body = get_metrics().export_prometheus()
-        self.send_response(200)
-        self.send_header("Content-Type", "text/plain; version=0.0.4")
-        self.end_headers()
-        self.wfile.write(body)
-
-    def log_message(self, *_: object) -> None:
-        pass
-
-
-HTTPServer(("0.0.0.0", 8000), MetricsHandler).serve_forever()
 ```
+winnow metrics --port 8000           # GET /metrics on 127.0.0.1:8000
+winnow run --watch --metrics-port 8000 --metrics-host 0.0.0.0 pipeline.yaml
+```
+
+`--metrics-port` serves `/metrics` from the *same process* that ingests, so a
+scrape reflects live runs. When `prometheus_client` is installed the registry
+backing is used; otherwise the endpoint renders the same families from the
+in-memory store via `Metrics.render_plain_text()` — both produce valid,
+identically-named exposition, so Grafana works either way.
 
 ### Metric families
 
@@ -123,8 +115,18 @@ configure_observability(tracer=trace.get_tracer("winnow"))
 For `--watch` schedulers the recommended setup is:
 
 ```
-winnow run --watch --log-json --log-level info --interval 30 pipeline.yaml
+winnow run --watch --log-json --log-level info --interval 30 \
+    --metrics-port 8000 --metrics-host 0.0.0.0 pipeline.yaml
 ```
 
-…with metrics exported from the host app's process or a small sidecar, and
-alerting on `pipeline_failures_total` and `pipeline_duration_seconds` SLOs.
+…with Prometheus scraping `:8000/metrics` and alerting on
+`pipeline_failures_total` and `pipeline_duration_seconds` SLOs.
+
+A zero-touch stack (Qdrant + Winnow + Prometheus + Grafana, dashboard
+included) ships in `docker/observability/`:
+
+```
+cd docker/observability
+docker compose up -d --build
+# Grafana at http://localhost:3000 (admin/admin) → dashboard "Winnow"
+```

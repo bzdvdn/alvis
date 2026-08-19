@@ -81,6 +81,26 @@ def test_metrics_timer_records_bucket() -> None:
     assert hist["sum"] >= 0
 
 
+def test_render_plain_text_renders_counters_and_histograms() -> None:
+    m = Metrics()
+    m.inc("pipeline_runs_total", labels={"source": "fs", "index": "memory"})
+    m.observe("pipeline_duration_seconds", value=0.07, labels={"source": "fs"})
+
+    text = m.render_plain_text().decode()
+    assert '# TYPE pipeline_runs_total counter' in text
+    assert 'pipeline_runs_total{index="memory",source="fs"} 1' in text
+    assert "# TYPE pipeline_duration_seconds histogram" in text
+    assert 'pipeline_duration_seconds_bucket{le="0.1",source="fs"} 1' in text
+    assert 'pipeline_duration_seconds_bucket{le="+Inf",source="fs"} 1' in text
+    assert 'pipeline_duration_seconds_sum{source="fs"} 0.07' in text
+    assert 'pipeline_duration_seconds_count{source="fs"} 1' in text
+    assert text.count("le=\"+Inf\"") == 1
+
+
+def test_render_plain_text_empty_store() -> None:
+    assert Metrics().render_plain_text() == b""
+
+
 def test_json_formatter_renders_extra() -> None:
     formatter = _JsonFormatter()
     payload = json.loads(

@@ -6,22 +6,30 @@ import asyncio
 import json
 import logging
 import os
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 
 import typer
+import yaml
 
+import winnow.observability as ob
 from winnow import __version__
 from winnow.answer import Synthesizer
 from winnow.config import ConfigError, load_config
 from winnow.core.models import CCT_SCHEMA_VERSION
 from winnow.docstore import DocStore
+from winnow.env import load_dotenv, missing_env
 from winnow.errors import PipelineError
+from winnow.factories import build_indexer, build_source, source_identity
 from winnow.observability import setup_logging
 from winnow.pipeline.engine import PipelineEngine, PipelineResult
 from winnow.pipeline.runner import answer_async, query_async
 from winnow.plugin import KINDS, Plugin, discover_plugins, load_local_plugins, registry
 from winnow.registry import check_pipeline_supported
+from winnow.sources.base import SourceError
 
 app = typer.Typer(
     name="winnow",
@@ -59,35 +67,102 @@ def _enable_plugins(plugin_dirs: list[Path] | None) -> list[Plugin]:
     return list(registry().plugins())
 
 
-_DEFAULT_PIPELINE = """\
-pipeline:
-  source:
-    type: confluence
-    config:
-      url: https://wiki.example.com
-      space: TEAM
-      api_token_env: CONFLUENCE_API_TOKEN
+def _load_env_file(env_file: Path | None) -> None:
+    """Load an explicit ``--env-file``, or a conventional ``./.env`` when present."""
+    if env_file is not None:
+        load_dotenv(env_file)
+    elif Path(".env").is_file():
+        load_dotenv(".env")
 
-  extract:
-    strategy: auto
 
-  chunk:
-    strategy: auto
-    config:
-      max_tokens: 500
-      overlap: 50
+def _fail_missing_env(pipeline: object) -> None:
+    """Fail fast when the config references env vars that are not set."""
+    missing = missing_env(pipeline)  # type: ignore[arg-type]
+    if not missing:
+        return
+    typer.echo(
+        "Missing environment variable(s) referenced by the config: "
+        + ", ".join(missing)
+        + "\nSet them in the shell or point --env-file at a .env file.",
+        err=True,
+    )
+    raise typer.Exit(1)
 
-  embed:
-    type: default
-    config:
-      model: text-embedding-3-small
 
-  index:
-    type: qdrant
-    config:
-      url: http://localhost:6333
-      collection: winnow_docs
-"""
+_SOURCE_TEMPLATES: dict[str, dict[str, object]] = {
+    "fs": {"type": "fs", "config": {"path": "./data"}},
+    "confluence": {
+        "type": "confluence",
+        "config": {
+            "url": "https://wiki.example.com",
+            "space": "TEAM",
+            "api_token_env": "CONFLUENCE_API_TOKEN",
+        },
+    },
+    "github": {
+        "type": "github",
+        "config": {
+            "repo": "org/repo",
+            "branch": "main",
+            "api_token_env": "GITHUB_TOKEN",
+        },
+    },
+    "gitlab": {
+        "type": "gitlab",
+        "config": {
+            "url": "https://gitlab.com",
+            "project": "org/repo",
+            "api_token_env": "GITLAB_TOKEN",
+        },
+    },
+    "s3": {
+        "type": "s3",
+        "config": {
+            "url": "http://localhost:9000",
+            "bucket": "docs",
+            "region": "us-east-1",
+            "access_key_env": "S3_ACCESS_KEY",
+            "secret_key_env": "S3_SECRET_KEY",
+        },
+    },
+}
+
+_INDEX_TEMPLATES: dict[str, dict[str, object]] = {
+    "memory": {"type": "memory", "config": {}},
+    "qdrant": {
+        "type": "qdrant",
+        "config": {"url": "http://localhost:6333", "collection": "winnow_docs"},
+    },
+    "pgvector": {
+        "type": "pgvector",
+        "config": {"dsn_env": "POSTGRES_DSN", "table": "winnow_chunks"},
+    },
+}
+
+
+def _pipeline_yaml(source: str, index: str) -> str:
+    """Render a runnable pipeline from the ``--source`` / ``--index`` templates."""
+    if source not in _SOURCE_TEMPLATES:
+        raise typer.BadParameter(
+            f"unknown source {source!r} (known: {sorted(_SOURCE_TEMPLATES)})"
+        )
+    if index not in _INDEX_TEMPLATES:
+        raise typer.BadParameter(
+            f"unknown index {index!r} (known: {sorted(_INDEX_TEMPLATES)})"
+        )
+    pipeline = {
+        "pipeline": {
+            "source": _SOURCE_TEMPLATES[source],
+            "extract": {"strategy": "auto"},
+            "chunk": {
+                "strategy": "auto",
+                "config": {"max_tokens": 500, "overlap": 50},
+            },
+            "embed": {"type": "default"},
+            "index": _INDEX_TEMPLATES[index],
+        }
+    }
+    return yaml.safe_dump(pipeline, sort_keys=False)
 
 
 def _version_callback(value: bool) -> None:
@@ -111,18 +186,31 @@ def main(
 
 @app.command()
 def init(
+    source: str = typer.Option(  # noqa: B008
+        "confluence",
+        "--source",
+        help="Source adapter to scaffold (fs, confluence, github, gitlab, s3).",
+    ),
+    index: str = typer.Option(  # noqa: B008
+        "qdrant",
+        "--index",
+        help="Index adapter to scaffold (memory, qdrant, pgvector).",
+    ),
     force: bool = typer.Option(False, "--force", "-f", help="Overwrite an existing winnow.yaml."),
     path: Path = typer.Argument(  # noqa: B008
         Path("winnow.yaml"), help="Where to write the pipeline config."
     ),
 ) -> None:
-    """Scaffold a new pipeline project."""
+    """Scaffold a new pipeline project (source/index-specific template)."""
     if path.exists() and not force:
         typer.echo(f"Error: {path} already exists. Use --force to overwrite.", err=True)
         raise typer.Exit(1)
-    path.write_text(_DEFAULT_PIPELINE, encoding="utf-8")
-    typer.echo(f"Created {path}")
-    typer.echo(f"Next: edit {path}, then run 'winnow validate {path}'")
+    path.write_text(_pipeline_yaml(source, index), encoding="utf-8")
+    typer.echo(f"Created {path} ({source} source, {index} index)")
+    typer.echo(
+        f"Next: edit {path}, set its env vars (or a .env), "
+        "then run 'winnow validate {path}'"
+    )
 
 
 @app.command()
@@ -154,6 +242,11 @@ def validate(
         "--plugins",
         help="Directories of local companion-plugin .py files to load.",
     ),
+    env_file: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--env-file",
+        help="Load secrets from this file (default: ./.env if present).",
+    ),
     json_output: bool = typer.Option(  # noqa: B008
         False,
         "--json",
@@ -162,6 +255,7 @@ def validate(
 ) -> None:
     """Validate the pipeline YAML config and print a report."""
     _enable_plugins(plugin_dirs)
+    _load_env_file(env_file)
     try:
         pipeline = load_config(config)
     except ConfigError as exc:
@@ -171,13 +265,14 @@ def validate(
             typer.echo(f"Invalid config:\n{exc}", err=True)
         raise typer.Exit(1) from exc
 
+    missing = missing_env(pipeline)
     problems = check_pipeline_supported(
         source=pipeline.source.type,
         extract=pipeline.extract.strategy,
         chunk=pipeline.chunk.strategy,
         embed=pipeline.embed.type,
         index=pipeline.index.type if pipeline.index else None,
-    )
+    ) + [f"missing environment variable: {name}" for name in missing]
 
     engine = PipelineEngine(pipeline)
     stages: dict[str, str] = {
@@ -236,6 +331,11 @@ def run(
         "--plugins",
         help="Directories of local companion-plugin .py files to load.",
     ),
+    env_file: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--env-file",
+        help="Load secrets from this file (default: ./.env if present).",
+    ),
     dry_run: bool = typer.Option(  # noqa: B008
         False,
         "--dry-run",
@@ -280,6 +380,17 @@ def run(
         "--log-level",
         help="Log verbosity: debug, info, warning or error.",
     ),
+    metrics_host: str = typer.Option(  # noqa: B008
+        "127.0.0.1",
+        "--metrics-host",
+        help="Interface for the Prometheus /metrics endpoint. Use 0.0.0.0 "
+        "inside containers.",
+    ),
+    metrics_port: int | None = typer.Option(  # noqa: B008
+        None,
+        "--metrics-port",
+        help="Serve live Prometheus metrics on this port while running.",
+    ),
 ) -> None:
     """Run the configured ingestion pipeline(s)."""
     level = getattr(logging, log_level.upper(), None)
@@ -293,19 +404,27 @@ def run(
     if interval <= 0:
         typer.echo("Error: --interval must be > 0", err=True)
         raise typer.Exit(2)
+    if metrics_port is not None and metrics_port < 0:
+        typer.echo("Error: --metrics-port must be >= 0", err=True)
+        raise typer.Exit(2)
     _enable_plugins(plugin_dirs)
+    _load_env_file(env_file)
     if watch and not incremental:
         incremental = True
         typer.echo("--watch implies --incremental; enabling incremental mode.")
+
+    metrics_server = _start_metrics_server(metrics_host, metrics_port)
 
     configs = _resolve_configs(configs)
     engines: list[PipelineEngine] = []
     for config in configs:
         try:
-            engines.append(PipelineEngine.from_yaml(config))
+            engine = PipelineEngine.from_yaml(config)
         except ConfigError as exc:
             typer.echo(f"Invalid config {config}:\n{exc}", err=True)
             raise typer.Exit(1) from exc
+        _fail_missing_env(engine.config)
+        engines.append(engine)
 
     if dry_run:
         invalid = False
@@ -372,9 +491,16 @@ def run(
             asyncio.run(_watch_forever())
         except KeyboardInterrupt:
             typer.echo("\nWatching stopped.")
+        finally:
+            if metrics_server is not None:
+                metrics_server.shutdown()
         return
 
-    results = asyncio.run(_run_all())
+    try:
+        results = asyncio.run(_run_all())
+    finally:
+        if metrics_server is not None:
+            metrics_server.shutdown()
     failed = 0
     for config, result in zip(configs, results, strict=True):
         if isinstance(result, BaseException):
@@ -411,6 +537,11 @@ def query(
         "--plugins",
         help="Directories of local companion-plugin .py files to load.",
     ),
+    env_file: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--env-file",
+        help="Load secrets from this file (default: ./.env if present).",
+    ),
     text: str = typer.Option(  # noqa: B008
         ...,
         "--text",
@@ -446,6 +577,7 @@ def query(
 ) -> None:
     """Retrieve the chunks closest to --text (or synthesize an answer)."""
     _enable_plugins(plugin_dirs)
+    _load_env_file(env_file)
     try:
         if answer:
             llm = None
@@ -483,6 +615,245 @@ def query(
                 typer.echo(f"      {key}: {value}")
         snippet = " ".join(hit.text.split())
         typer.echo(f"      {snippet[:180]}")
+
+
+async def _collect_status(
+    path: Path,
+    engine: PipelineEngine,
+    store: DocStore,
+    *,
+    probe: bool,
+) -> dict[str, object]:
+    """Report for one pipeline: source health, docstore state, last run, index."""
+    cfg = engine.config
+    source_id = source_identity(cfg.source)
+    report: dict[str, object] = {
+        "path": str(path),
+        "source": cfg.source.type,
+        "index": engine._index_summary(),
+        "state": str(store.path),
+    }
+
+    try:
+        source = build_source(cfg.source, max_bytes=cfg.extract.max_bytes)
+        listing = getattr(source, "list_documents", None)
+        if listing is None:
+            report["source_health"] = None
+        else:
+            metas = await listing()
+            report["source_health"] = {"ok": True, "documents": len(metas)}
+    except SourceError as exc:
+        report["source_health"] = {"ok": False, "error": str(exc)}
+    except Exception as exc:  # noqa: BLE001 — a failed probe must not kill status
+        report["source_health"] = {
+            "ok": False,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+    known = 0
+    for candidate, entry in store.sources():
+        if candidate == source_id:
+            documents = entry.get("documents")
+            known = len(documents) if isinstance(documents, dict) else 0
+    report["documents_known"] = known
+
+    run = store.last_run(source_id)
+    if run is None:
+        report["last_run"] = None
+    else:
+        report["last_run"] = {
+            "at": run.at,
+            "ok": run.ok,
+            "error": run.error,
+            "duration_seconds": round(run.duration_seconds, 3),
+            "documents": run.documents,
+            "chunks": run.chunks,
+            "changed": run.changed,
+            "skipped": run.skipped,
+            "deleted": run.deleted,
+            "embed_cache_hits": run.embed_cache_hits,
+            "embed_cache_misses": run.embed_cache_misses,
+        }
+
+    if cfg.index is not None:
+        try:
+            indexer = build_indexer(cfg.index)
+            counter = getattr(indexer, "count", None)
+            if isinstance(counter, int):
+                report["index_points"] = counter
+            elif callable(counter):
+                if not probe:
+                    report["index_points"] = "remote (pass --probe to check)"
+                else:
+                    try:
+                        value = await asyncio.wait_for(counter(), timeout=5.0)
+                        report["index_points"] = int(value)
+                    except Exception:  # noqa: BLE001
+                        report["index_points"] = "unreachable"
+            else:
+                report["index_points"] = "n/a"
+        except (SourceError, ValueError) as exc:
+            report["index_points"] = f"error: {exc}"
+    else:
+        report["index_points"] = "n/a"
+    return report
+
+
+@app.command()
+def status(
+    configs: list[Path] = typer.Argument(  # noqa: B008
+        None,
+        help="Pipeline YAML configs (default: winnow/pipelines/*.yaml).",
+    ),
+    plugin_dirs: list[Path] = typer.Option(  # noqa: B008
+        None,
+        "--plugins",
+        help="Directories of local companion-plugin .py files to load.",
+    ),
+    env_file: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--env-file",
+        help="Load secrets from this file (default: ./.env if present).",
+    ),
+    state: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--state",
+        help="Incremental state file (default .winnow/state.json).",
+    ),
+    probe: bool = typer.Option(  # noqa: B008
+        False,
+        "--probe",
+        help="Check the remote index live (may take a few seconds).",
+    ),
+    json_output: bool = typer.Option(  # noqa: B008
+        False,
+        "--json",
+        help="Emit machine-readable reports as JSON.",
+    ),
+) -> None:
+    """Report each pipeline's ingestion state: source health, documents, last run."""
+    _enable_plugins(plugin_dirs)
+    _load_env_file(env_file)
+    configs = _resolve_configs(configs)
+    store = DocStore(state or DocStore.default_path())
+    reports: list[dict[str, Any]] = []
+
+    async def _collect_all() -> None:
+        for path in configs:
+            try:
+                engine = PipelineEngine.from_yaml(path)
+            except ConfigError as exc:
+                reports.append({"path": str(path), "config_error": str(exc)})
+                continue
+            _fail_missing_env(engine.config)
+            reports.append(await _collect_status(path, engine, store, probe=probe))
+
+    asyncio.run(_collect_all())
+
+    if json_output:
+        typer.echo(json.dumps(reports, indent=2))
+        return
+
+    for report in reports:
+        if "config_error" in report:
+            typer.echo(f"{report['path']}: invalid config: {report['config_error']}")
+            continue
+        typer.echo(
+            f"{report['path']}: {report['source']} source → {report['index']}"
+        )
+        health = report["source_health"]
+        if health is None:
+            typer.echo("  source health: not probeable (source has no listing)")
+        elif health["ok"]:
+            typer.echo(f"  source health: OK ({health['documents']} documents)")
+        else:
+            typer.echo(f"  source health: FAILED: {health['error']}")
+        typer.echo(f"  documents known: {report['documents_known']}")
+        run = report["last_run"]
+        if run is None:
+            typer.echo("  last run: never")
+        else:
+            outcome = "ok" if run["ok"] else f"FAILED: {run['error']}"
+            typer.echo(
+                f"  last run: {run['at']} ({outcome}, {run['duration_seconds']:.2f}s)"
+            )
+            typer.echo(
+                f"    documents {run['documents']} | chunks {run['chunks']} | "
+                f"changed {run['changed']} | skipped {run['skipped']} | "
+                f"deleted {run['deleted']}"
+            )
+            typer.echo(
+                f"    embed cache: {run['embed_cache_hits']} hits / "
+                f"{run['embed_cache_misses']} misses"
+            )
+        typer.echo(f"  index points: {report['index_points']}")
+
+
+class _MetricsHandler(BaseHTTPRequestHandler):
+    """Serves the process-wide metric store as Prometheus text exposition."""
+
+    def do_GET(self) -> None:
+        if self.path.rstrip("/") != "/metrics":
+            self.send_error(404)
+            return
+        store = ob.get_metrics()
+        try:
+            body = store.export_prometheus()
+        except Exception:  # noqa: BLE001 — prometheus_client missing
+            body = b""
+        if not body:
+            body = store.render_plain_text()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; version=0.0.4")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format: str, *args: object) -> None:
+        ob.LOG.debug(
+            "metrics.http",
+            extra={"message": " ".join((format, *map(str, args)))},
+        )
+
+
+def _start_metrics_server(
+    host: str | None,
+    port: int | None,
+) -> ThreadingHTTPServer | None:
+    """Start /metrics on a daemon thread, or ``None`` when ``port`` is unset."""
+    if port is None:
+        return None
+    server = ThreadingHTTPServer((host or "127.0.0.1", port), _MetricsHandler)
+
+    def _serve() -> None:
+        server.serve_forever()
+
+    threading.Thread(target=_serve, daemon=True).start()
+    typer.echo(f"Serving /metrics on http://{host or '127.0.0.1'}:{port}")
+    return server
+
+
+@app.command()
+def metrics(
+    host: str = typer.Option(  # noqa: B008
+        "127.0.0.1",
+        "--host",
+        help="Interface to bind (use 0.0.0.0 inside containers).",
+    ),
+    port: int = typer.Option(  # noqa: B008
+        8000,
+        "--port",
+        help="TCP port to serve /metrics on.",
+    ),
+) -> None:
+    """Expose Prometheus metrics over HTTP (GET /metrics)."""
+    server = _start_metrics_server(host, port)
+    if server is None:
+        raise typer.Exit(1)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        typer.echo("\nStopped.")
 
 
 if __name__ == "__main__":

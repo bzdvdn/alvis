@@ -137,3 +137,23 @@ async def test_qdrant_reconcile_no_stale_skips_delete() -> None:
     index.client.transport = _mock_transport(handler)
 
     await index.reconcile("confluence:TEAM@x", {"u/a": "h"})
+
+
+async def test_qdrant_count_reports_points() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"result": {"points_count": 42}})
+
+    index = QdrantIndex(url="http://localhost:6333", collection="test")
+    index.client.transport = _mock_transport(handler)
+
+    assert await index.count() == 42
+
+
+async def test_qdrant_count_without_points_reports_zero() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"result": {}})
+
+    index = QdrantIndex(url="http://localhost:6333", collection="test")
+    index.client.transport = _mock_transport(handler)
+
+    assert await index.count() == 0

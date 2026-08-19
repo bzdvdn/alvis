@@ -9,7 +9,9 @@ import pytest
 
 from winnow import dsl, run_async, watch_async
 from winnow.config import ConfigError
-from winnow.docstore import DocEntry, DocStore
+from winnow.docstore import DocEntry, DocStore, RunRecord
+from winnow.errors import PipelineError
+from winnow.factories import source_identity
 from winnow.index import MemoryIndex
 from winnow.pipeline.engine import PipelineResult, pipeline_signature
 
@@ -204,3 +206,77 @@ def test_watch_async_rejects_nonpositive_interval() -> None:
     cfg = dsl.pipeline(dsl.fs(path="/x"), index=dsl.memory())
     with pytest.raises(ConfigError):
         asyncio.run(anext(watch_async([cfg], interval=0)))
+
+
+async def test_run_records_success_in_ledger(tmp_path: Path) -> None:
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    _write(corpus, "a.md", "# A\nfirst draft")
+    state = tmp_path / "state.json"
+
+    indexer, result = await _run(corpus, state)
+    cfg = dsl.pipeline(dsl.fs(path=str(corpus)), index=dsl.memory())
+
+    record = DocStore(state).last_run(source_identity(cfg.source))
+    assert record is not None
+    assert record.ok is True
+    assert record.error == ""
+    assert record.documents == result.documents_ingested
+    assert record.chunks == result.chunks_indexed
+    assert record.changed == result.documents_changed
+    assert record.duration_seconds >= 0
+
+
+async def test_run_records_failure_in_ledger(tmp_path: Path) -> None:
+    state = tmp_path / "state.json"
+    cfg = dsl.pipeline(dsl.fs(path=str(tmp_path / "missing")), index=dsl.memory())
+
+    with pytest.raises(PipelineError):
+        await run_async(cfg, incremental=True, state_path=str(state))
+
+    record = DocStore(state).last_run(source_identity(cfg.source))
+    assert record is not None
+    assert record.ok is False
+    assert "source 'fs' failed" in record.error
+    assert record.documents == 0
+
+
+def test_docstore_ledger_is_bounded_newest_first(tmp_path: Path) -> None:
+    store = DocStore(tmp_path / "state.json")
+    for i in range(12):
+        store.record_run(
+            "s1",
+            RunRecord(at=f"2026-01-01T00:00:{i:02d}+00:00", ok=True, documents=i),
+        )
+    history = store.runs("s1")
+    assert len(history) == 10
+    assert history[0].at.endswith("11+00:00")
+    assert history[0].documents == 11
+    assert history[-1].at.endswith("02+00:00")
+
+
+def test_docstore_run_record_roundtrip_tolerates_unknown_fields() -> None:
+    record = RunRecord.from_dict(
+        {
+            "at": "2026-01-01T00:00:00+00:00",
+            "ok": True,
+            "documents": 3,
+            "future_field": "ignored",
+        }
+    )
+    assert record.ok is True
+    assert record.documents == 3
+    assert record.error == ""
+    assert RunRecord.from_dict(record.to_dict()) == record
+
+
+def test_docstore_reloads_legacy_file_without_runs(tmp_path: Path) -> None:
+    state = tmp_path / "state.json"
+    state.write_text(
+        '{"version": 1, "sources": {"s1": '
+        '{"signature": "sig", "documents": {}}}}',
+        encoding="utf-8",
+    )
+    store = DocStore(state)
+    assert store.last_run("s1") is None
+    assert store.runs("s1") == []

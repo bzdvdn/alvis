@@ -6,11 +6,12 @@ import hashlib
 import json
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 import winnow.observability as ob
 from winnow.config import ConfigError, PipelineConfig, load_config
-from winnow.docstore import DocStore
+from winnow.docstore import DocStore, RunRecord
 from winnow.factories import (
     build_chunker,
     build_embedder,
@@ -168,16 +169,48 @@ class PipelineEngine:
         Observability: every run updates the process-wide metrics
         (``pipeline_runs_total``, ``pipeline_duration_seconds``, resource
         counters, ``pipeline_failures_total`` on error) and emits a
-        ``pipeline.completed`` / ``pipeline.failed`` structured log line.
+        ``pipeline.completed`` / ``pipeline.failed`` structured log line. With
+        a ``docstore`` the outcome is also written to the run ledger (see
+        :meth:`DocStore.record_run`), so ``winnow status`` can show the last
+        run even when it failed.
         """
         started = time.monotonic()
+        source_id = source_identity(self.config.source)
+        signature = pipeline_signature(self.config) if docstore is not None else None
         async with ob.span("pipeline.run", attributes=self._metric_labels):
             try:
                 result = await self._execute(docstore)
-            except Exception:
+            except Exception as exc:
                 ob.inc("pipeline_failures_total", labels=self._metric_labels)
                 ob.LOG.exception("pipeline.failed", extra=self._metric_labels)
+                if docstore is not None and signature is not None:
+                    docstore.record_run(
+                        source_id,
+                        RunRecord(
+                            at=_now_iso(),
+                            ok=False,
+                            error=str(exc),
+                            duration_seconds=time.monotonic() - started,
+                        ),
+                    )
                 raise
+        seconds = time.monotonic() - started
+        if docstore is not None and signature is not None:
+            docstore.record_run(
+                source_id,
+                RunRecord(
+                    at=_now_iso(),
+                    ok=True,
+                    duration_seconds=seconds,
+                    documents=result.documents_ingested,
+                    chunks=result.chunks_indexed,
+                    changed=result.documents_changed,
+                    skipped=result.documents_skipped,
+                    deleted=result.documents_deleted,
+                    embed_cache_hits=result.embed_cache_hits,
+                    embed_cache_misses=result.embed_cache_misses,
+                ),
+            )
         seconds = time.monotonic() - started
         ob.inc("pipeline_runs_total", labels=self._metric_labels)
         ob.inc(
@@ -283,3 +316,8 @@ class PipelineEngine:
             indexer=indexer,
             metric_labels=self._metric_labels,
         )
+
+
+def _now_iso() -> str:
+    """UTC timestamp in a sortable, status-friendly ISO format."""
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")

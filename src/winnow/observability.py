@@ -21,6 +21,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import logging
+import math
 import time
 from collections import defaultdict
 from collections.abc import AsyncIterator, Iterator
@@ -317,6 +318,37 @@ class Metrics:
         text: bytes = pc.generate_latest(registry=self._prom_registry)
         return text
 
+    def render_plain_text(self) -> bytes:
+        """Render the in-memory families without a Prometheus backend.
+
+        Produces valid Prometheus text exposition: counters as ``counter``
+        families and histograms as ``histogram`` families (``_bucket`` lines at
+        the configured thresholds plus ``_sum`` and ``_count``). The metrics
+        endpoint uses this when ``prometheus_client`` is missing or the stdlib
+        store is in use.
+        """
+        lines: list[str] = []
+        for name, family in sorted(self._counters.items()):
+            lines.append(f"# HELP {name} {name.replace('_', ' ')}")
+            lines.append(f"# TYPE {name} counter")
+            for key, counter in family.items():
+                lines.append(f"{name}{_format_labels(key)} {counter.value}")
+        for name, hist_family in sorted(self._histograms.items()):
+            lines.append(f"# HELP {name} {name.replace('_', ' ')}")
+            lines.append(f"# TYPE {name} histogram")
+            for key, hist in hist_family.items():
+                for bucket in hist.buckets:
+                    if bucket == math.inf:
+                        continue
+                    le = _with_le(key, _format_number(bucket))
+                    lines.append(f"{name}_bucket{{{le}}} {hist.counts[bucket]}")
+                lines.append(
+                    f"{name}_bucket{{{_with_le(key, '+Inf')}}} {hist.count}"
+                )
+                lines.append(f"{name}_sum{_format_labels(key)} {_format_number(hist.sum)}")
+                lines.append(f"{name}_count{_format_labels(key)} {hist.count}")
+        return ("\n".join(lines) + "\n").encode() if lines else b""
+
     def reset(self) -> None:
         """Drop every collected sample (useful between test runs/watch resets)."""
         self._counters.clear()
@@ -329,6 +361,29 @@ class Metrics:
 
 def _format_key(key: tuple[tuple[str, str], ...]) -> str:
     return " ".join(f"{k}={v}" for k, v in key)
+
+
+def _format_labels(key: tuple[tuple[str, str], ...]) -> str:
+    """Render a label set for the Prometheus text format (``{k="v",...}``)."""
+    if not key:
+        return ""
+    return "{" + ",".join(f'{k}="{v}"' for k, v in key) + "}"
+
+
+def _with_le(key: tuple[tuple[str, str], ...], le: str) -> str:
+    """``_format_labels`` plus a ``le`` upper-bound label (histogram buckets)."""
+    parts = [f'le="{le}"']
+    parts.extend(f'{k}="{v}"' for k, v in key)
+    return ",".join(parts)
+
+
+def _format_number(value: float) -> str:
+    """Compact, locale-free representation of a sample value."""
+    if value == math.inf:
+        return "+Inf"
+    if value == -math.inf:
+        return "-Inf"
+    return f"{value:g}"
 
 
 # --------------------------------------------------------------------------

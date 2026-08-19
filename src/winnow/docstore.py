@@ -25,8 +25,10 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 _VERSION = 2
+_RUN_HISTORY = 10
 
 
 @dataclass(frozen=True)
@@ -35,6 +37,55 @@ class DocEntry:
 
     content: str
     listing: str | None = None
+
+
+@dataclass
+class RunRecord:
+    """Outcome of one pipeline run, kept per source for operational visibility."""
+
+    at: str
+    ok: bool
+    error: str = ""
+    duration_seconds: float = 0.0
+    documents: int = 0
+    chunks: int = 0
+    changed: int = 0
+    skipped: int = 0
+    deleted: int = 0
+    embed_cache_hits: int = 0
+    embed_cache_misses: int = 0
+
+    @staticmethod
+    def from_dict(value: dict[str, Any]) -> RunRecord:
+        """Decode a stored record, tolerating fields added in later versions."""
+        return RunRecord(
+            at=str(value.get("at", "")),
+            ok=bool(value.get("ok", False)),
+            error=str(value.get("error", "")),
+            duration_seconds=float(value.get("duration_seconds", 0.0)),
+            documents=int(value.get("documents", 0)),
+            chunks=int(value.get("chunks", 0)),
+            changed=int(value.get("changed", 0)),
+            skipped=int(value.get("skipped", 0)),
+            deleted=int(value.get("deleted", 0)),
+            embed_cache_hits=int(value.get("embed_cache_hits", 0)),
+            embed_cache_misses=int(value.get("embed_cache_misses", 0)),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "at": self.at,
+            "ok": self.ok,
+            "error": self.error,
+            "duration_seconds": self.duration_seconds,
+            "documents": self.documents,
+            "chunks": self.chunks,
+            "changed": self.changed,
+            "skipped": self.skipped,
+            "deleted": self.deleted,
+            "embed_cache_hits": self.embed_cache_hits,
+            "embed_cache_misses": self.embed_cache_misses,
+        }
 
 
 class DocStore:
@@ -48,6 +99,7 @@ class DocStore:
     def __init__(self, path: Path) -> None:
         self.path = path
         self._sources: dict[str, dict[str, object]] = self._load()
+        self._runs: dict[str, list[RunRecord]] = self._load_runs()
 
     @staticmethod
     def default_path() -> Path:
@@ -99,7 +151,14 @@ class DocStore:
         """Atomically persist the state to disk (replaces on success)."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = json.dumps(
-            {"version": _VERSION, "sources": self._sources},
+            {
+                "version": _VERSION,
+                "sources": self._sources,
+                "runs": {
+                    source_id: [run.to_dict() for run in history]
+                    for source_id, history in self._runs.items()
+                },
+            },
             sort_keys=True,
             indent=2,
             ensure_ascii=False,
@@ -107,6 +166,31 @@ class DocStore:
         temporary = self.path.with_suffix(f"{self.path.suffix}.tmp")
         temporary.write_text(payload, encoding="utf-8")
         temporary.replace(self.path)
+
+    def record_run(self, source_id: str, record: RunRecord) -> None:
+        """Record one run outcome for ``source_id`` and persist it.
+
+        Keeps a bounded history per source (newest first). Persisting here
+        means failures are visible to ``winnow status`` even when the run
+        itself crashed — the ledger is written outside the run's success path.
+        """
+        history = self._runs.setdefault(source_id, [])
+        history.insert(0, record)
+        del history[_RUN_HISTORY:]
+        self.save()
+
+    def runs(self, source_id: str) -> list[RunRecord]:
+        """Recent run history for ``source_id``, newest first."""
+        return list(self._runs.get(source_id, []))
+
+    def last_run(self, source_id: str) -> RunRecord | None:
+        """The most recent run outcome for ``source_id``, if any."""
+        history = self._runs.get(source_id)
+        return history[0] if history else None
+
+    def sources(self) -> list[tuple[str, dict[str, object]]]:
+        """Every known source entry as ``(source_id, entry)``."""
+        return sorted(self._sources.items())
 
     def _load(self) -> dict[str, dict[str, object]]:
         if not self.path.exists():
@@ -125,6 +209,26 @@ class DocStore:
             loaded[str(source_id)] = entry
         return loaded
 
+    def _load_runs(self) -> dict[str, list[RunRecord]]:
+        """Decode the run ledger, tolerating its absence in older state files."""
+        if not self.path.exists():
+            return {}
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {}
+        runs = data.get("runs")
+        if not isinstance(runs, dict):
+            return {}
+        loaded: dict[str, list[RunRecord]] = {}
+        for source_id, history in runs.items():
+            if not isinstance(history, list):
+                continue
+            records = [RunRecord.from_dict(r) for r in history if isinstance(r, dict)]
+            if records:
+                loaded[str(source_id)] = records
+        return loaded
+
 
 def _decode_entry(value: object) -> DocEntry:
     """Decode a stored entry, migrating the legacy ``str`` shape (content only)."""
@@ -140,4 +244,4 @@ def _decode_entry(value: object) -> DocEntry:
     return DocEntry(content=str(value))
 
 
-__all__ = ["DocEntry", "DocStore"]
+__all__ = ["DocEntry", "DocStore", "RunRecord"]

@@ -1,0 +1,57 @@
+# Zero-touch observability stack for Winnow ingestion flows.
+#
+#   cd docker/observability
+#   docker compose up -d --build
+#
+#   Qdrant    http://localhost:6333 (dashboard)
+#   Winnow    ingests examples/documents into the `winnow_demo` collection,
+#             re-polling every 60s, exposing /metrics on :8000
+#   Prometheus http://localhost:9090
+#   Grafana   http://localhost:3000  (admin / admin) — dashboard "Winnow"
+
+name: winnow-observability
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.10.0
+    ports:
+      - "6333:6333"
+
+  winnow:
+    build:
+      context: ../..
+    command: run /quickstart/pipeline.yaml --watch --interval 60 --incremental --metrics-host 0.0.0.0 --metrics-port 8000
+    volumes:
+      - ./pipeline.yaml:/quickstart/pipeline.yaml:ro
+      - ../../examples/documents:/corpus:ro
+      - winnow_state:/workspace/.winnow
+    depends_on:
+      - qdrant
+    healthcheck:
+      test: ["CMD", "winnow", "status", "/quickstart/pipeline.yaml", "--probe"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+volumes:
+  winnow_state:

@@ -248,3 +248,266 @@ def test_validate_rejects_plugin_type_without_flag(tmp_path: Path) -> None:
     result = runner.invoke(app, ["validate", str(config)])
     assert result.exit_code == 1
     assert "svc_demo" in result.output
+
+
+def test_init_writes_selected_source_and_index(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["init", "--source", "fs", "--index", "pgvector"])
+    assert result.exit_code == 0
+    target = tmp_path / "winnow.yaml"
+    assert target.exists()
+    text = target.read_text(encoding="utf-8")
+    assert "type: fs" in text
+    assert "type: pgvector" in text
+    assert "dsn_env" in text
+    assert "POSTGRES_DSN" in text
+
+
+def test_init_rejects_unknown_source_or_index(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["init", "--source", "nope"])
+    assert result.exit_code != 0
+    assert "unknown source" in result.output
+
+
+def test_validate_reports_missing_environment_variable(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("CONFLUENCE_API_TOKEN", raising=False)
+    config = tmp_path / "pipeline.yaml"
+    config.write_text(
+        "pipeline:\n"
+        "  source:\n"
+        "    type: confluence\n"
+        "    config:\n"
+        "      api_token_env: CONFLUENCE_API_TOKEN\n"
+        "  index:\n"
+        "    type: qdrant\n",
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["validate", str(config)])
+    assert result.exit_code == 1
+    assert "CONFLUENCE_API_TOKEN" in result.output
+
+
+def test_validate_env_file_satisfies_missing_variable(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("CONFLUENCE_API_TOKEN", raising=False)
+    env_file = tmp_path / ".env"
+    env_file.write_text('CONFLUENCE_API_TOKEN="secret"\n', encoding="utf-8")
+    config = tmp_path / "pipeline.yaml"
+    config.write_text(
+        "pipeline:\n"
+        "  source:\n"
+        "    type: confluence\n"
+        "    config:\n"
+        "      api_token_env: CONFLUENCE_API_TOKEN\n"
+        "  index:\n"
+        "    type: qdrant\n",
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["validate", str(config), "--env-file", str(env_file)])
+    assert result.exit_code == 0
+    assert "is valid" in result.output
+
+
+def test_status_reports_last_run_from_ledger(tmp_path: Path, monkeypatch) -> None:
+    import json
+
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "a.md").write_text("# A\nhello content", encoding="utf-8")
+    state = tmp_path / "state.json"
+    config = tmp_path / "pipeline.yaml"
+    config.write_text(_fs_pipeline(corpus), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    run_result = runner.invoke(
+        app,
+        ["run", str(config), "--incremental", "--state", str(state)],
+    )
+    assert run_result.exit_code == 0
+
+    result = runner.invoke(app, ["status", str(config), "--state", str(state), "--json"])
+    assert result.exit_code == 0
+    report = json.loads(result.output)
+    assert report[0]["path"] == str(config)
+    assert report[0]["source_health"]["ok"] is True
+    assert report[0]["documents_known"] == 1
+    last_run = report[0]["last_run"]
+    assert last_run is not None
+    assert last_run["ok"] is True
+    assert last_run["documents"] == 1
+
+
+def test_status_reports_invalid_config(tmp_path: Path) -> None:
+    import json
+
+    config = tmp_path / "pipeline.yaml"
+    config.write_text("foo: bar\n", encoding="utf-8")
+    result = runner.invoke(app, ["status", str(config), "--json"])
+    assert result.exit_code == 0
+    report = json.loads(result.output)
+    assert "config_error" in report[0]
+
+
+def test_metrics_serves_prometheus_and_404(tmp_path: Path) -> None:
+    import urllib.request
+
+    from winnow.cli import _start_metrics_server
+
+    server = _start_metrics_server("127.0.0.1", 0)
+    assert server is not None
+    port = server.server_address[1]
+    try:
+        with urllib.request.urlopen(  # noqa: S310
+            f"http://127.0.0.1:{port}/metrics", timeout=5
+        ) as response:
+            assert response.status == 200
+            assert response.headers["Content-Type"].startswith("text/plain")
+            body = response.read().decode()
+        assert "counter" in body or body == ""
+
+        with pytest.raises(urllib.error.HTTPError) as excinfo:
+            urllib.request.urlopen(  # noqa: S310
+                f"http://127.0.0.1:{port}/other", timeout=5
+            )
+        assert excinfo.value.code == 404
+    finally:
+        server.shutdown()
+
+
+def _confluence_pipeline_with_token(tmp_path: Path, token_env: str) -> Path:
+    config = tmp_path / "pipeline.yaml"
+    config.write_text(
+        "pipeline:\n"
+        "  source:\n"
+        "    type: confluence\n"
+        "    config:\n"
+        f"      api_token_env: {token_env}\n"
+        "  index:\n"
+        "    type: qdrant\n",
+        encoding="utf-8",
+    )
+    return config
+
+
+def test_validate_loads_conventional_dotenv(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("CONFLUENCE_API_TOKEN", raising=False)
+    (tmp_path / ".env").write_text('CONFLUENCE_API_TOKEN="secret"\n', encoding="utf-8")
+    config = _confluence_pipeline_with_token(tmp_path, "CONFLUENCE_API_TOKEN")
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["validate", str(config)])
+    assert result.exit_code == 0
+    assert "is valid" in result.output
+
+
+def test_run_fails_fast_on_missing_env(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("CONFLUENCE_API_TOKEN", raising=False)
+    config = _confluence_pipeline_with_token(tmp_path, "CONFLUENCE_API_TOKEN")
+    result = runner.invoke(app, ["run", str(config)])
+    assert result.exit_code == 1
+    assert "Missing environment variable(s)" in result.output
+    assert "CONFLUENCE_API_TOKEN" in result.output
+
+
+def test_plugins_lists_local_plugins(tmp_path: Path, monkeypatch) -> None:
+    plugins = tmp_path / "plugins"
+    plugins.mkdir()
+    (plugins / "svc_demo.py").write_text(
+        "from winnow.plugin import Plugin\n\n"
+        "def _svc(*, config, max_bytes=None):\n"
+        "    raise NotImplementedError\n\n"
+        'plugin = Plugin(name="svc", version="1.0.0", '
+        'sources={"svc_demo": _svc})\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["plugins", "--plugins", str(plugins)])
+    assert result.exit_code == 0
+    assert "svc" in result.output
+    assert "svc_demo" in result.output
+
+
+def test_run_rejects_bad_options(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["run", "--log-level", "bogus"])
+    assert result.exit_code == 2
+
+    result = runner.invoke(app, ["run", "--parallel", "0"])
+    assert result.exit_code == 2
+
+    result = runner.invoke(app, ["run", "--interval", "0"])
+    assert result.exit_code == 2
+
+    result = runner.invoke(app, ["run", "--metrics-port", "-1"])
+    assert result.exit_code == 2
+
+
+def test_run_watch_implies_incremental(tmp_path: Path, monkeypatch) -> None:
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "a.md").write_text("# A\nhello", encoding="utf-8")
+    config = tmp_path / "pipeline.yaml"
+    config.write_text(_fs_pipeline(corpus), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    import winnow.cli as cli
+
+    def _interrupt(*_args, **_kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli.asyncio, "sleep", _interrupt)
+    result = runner.invoke(
+        app, ["run", str(config), "--watch", "--interval", "0.001"]
+    )
+    assert result.exit_code == 0
+    assert "--watch implies --incremental" in result.output
+    assert "Watching stopped" in result.output
+
+
+def test_status_text_render_shows_run(tmp_path: Path, monkeypatch) -> None:
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "a.md").write_text("# A\nhello content", encoding="utf-8")
+    state = tmp_path / "state.json"
+    config = tmp_path / "pipeline.yaml"
+    config.write_text(_fs_pipeline(corpus), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    runner.invoke(app, ["run", str(config), "--incremental", "--state", str(state)])
+
+    result = runner.invoke(app, ["status", str(config), "--state", str(state)])
+    assert result.exit_code == 0
+    assert "source health: OK" in result.output
+    assert "last run:" in result.output
+    assert "embed cache:" in result.output
+    assert "index points:" in result.output
+
+
+def test_status_probe_unreachable_index(tmp_path: Path, monkeypatch) -> None:
+    import winnow.cli as cli
+
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "a.md").write_text("# A\nhello", encoding="utf-8")
+    state = tmp_path / "state.json"
+    config = tmp_path / "pipeline.yaml"
+    config.write_text(_fs_pipeline(corpus), encoding="utf-8")
+
+    class _Unreachable:
+        async def count(self) -> int:
+            raise ConnectionError("down")
+
+        def __getattr__(self, name: str) -> object:
+            raise ConnectionError("down")
+
+    monkeypatch.setattr(cli, "build_indexer", lambda _index: _Unreachable())
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(
+        app, ["status", str(config), "--state", str(state), "--probe"]
+    )
+    assert result.exit_code == 0
+    assert "unreachable" in result.output

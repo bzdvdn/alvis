@@ -147,6 +147,16 @@ class QdrantIndex:
             payload={"vectors": {"size": dimensions, "distance": "Cosine"}},
         )
 
+    async def count(self) -> int:
+        """Total points in the collection (for ``winnow status``)."""
+        response = await self.client.request(
+            "GET",
+            f"/collections/{self.collection}",
+        )
+        result = response.get("result", {})
+        count = result.get("points_count")
+        return int(count) if isinstance(count, int) else 0
+
     async def _collection_exists(self) -> bool:
         try:
             await self.client.request("GET", f"/collections/{self.collection}")

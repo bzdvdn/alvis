@@ -159,6 +159,14 @@ class PgVectorIndex:
         async with await self._connect() as connection:
             await connection.execute(delete, params)
 
+    async def count(self) -> int:
+        """Total rows in the table (for ``winnow status``)."""
+        statement = _psql().SQL("SELECT count(*) FROM {}").format(self._table())
+        async with await self._connect() as connection:
+            cursor = await connection.execute(statement)
+            row = await cursor.fetchone()
+        return int(row[0]) if row and row[0] is not None else 0
+
     async def search(self, vector: list[float], *, top_k: int = 5) -> list[SearchHit]:
         """Nearest-neighbour search via cosine distance ``<=>``, best first.
 

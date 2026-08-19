@@ -1,0 +1,26 @@
+# FS source → Qdrant, for the docker/observability quickstart. The corpus is
+# bind-mounted read-only at /corpus and the ledger lives on the winnow_state
+# volume (default .winnow/state.json under /workspace).
+pipeline:
+  source:
+    type: fs
+    config:
+      path: /corpus
+
+  extract:
+    strategy: auto
+
+  chunk:
+    strategy: auto
+    config:
+      max_tokens: 300
+      overlap: 30
+
+  embed:
+    type: default
+
+  index:
+    type: qdrant
+    config:
+      url: http://qdrant:6333
+      collection: winnow_demo

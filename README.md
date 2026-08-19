@@ -66,7 +66,12 @@ winnow validate winnow.yaml              # validation report + pipeline graph
 winnow validate winnow.yaml --json       # machine-readable report for CI
 winnow run examples/hello-pipeline.yaml   # zero-dependency hello world
 winnow run winnow.yaml --dry-run          # describe pipeline without running
+winnow status examples/hello-pipeline.yaml  # source health, last run, index count
 ```
+
+Secrets are referenced by name (`api_token_env`, `dsn_env`, ...) from a
+`.env` in the project root (or `--env-file`); `winnow run` fails fast listing
+whatever is missing. See [docs/status.md](docs/status.md).
 
 ## Sources
 
@@ -127,6 +132,10 @@ pipeline is reported and does not stop the others:
 ```bash
 winnow run examples/confluence-qdrant.yaml examples/s3-qdrant.yaml --parallel 2
 ```
+
+For a zero-touch *monitoring* demo (Qdrant + Winnow watch mode + Prometheus +
+Grafana with a ready-made dashboard), see
+[`docker/observability/`](docker/observability/).
 
 ### Default pipelines folder
 
@@ -437,6 +446,7 @@ the latter only against trusted internal endpoints).
 - [Contributing](CONTRIBUTING.md) — how to write a connector (cover page: connector fixture + golden tests)
 - [Plugin registry](docs/plugins.md) — built-in and community plugins (v1.1 SDK)
 - [Observability](docs/observability.md) — structured logging, metrics, tracing, Prometheus export
+- [Operations](docs/status.md) — `winnow status`, metrics endpoint, `.env` loading, `init` templates, dashboards
 - [Versioning & deprecation](docs/versioning.md) — semver, stable surface, deprecation window
 - [Python DSL guide](docs/dsl.md) — describing pipelines from code
 - [Constitution](CONSTITUTION.md) — purpose, scope, open-source strategy
