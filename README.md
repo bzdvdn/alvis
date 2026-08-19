@@ -9,7 +9,7 @@ Source → Artifact → Extraction → Canonical Content Tree → Chunking → E
 
 ## Status
 
-v0.6.0. Core pipeline runs end-to-end: fs/Confluence/GitHub/GitLab/S3 sources → extract → chunk → embed → memory/Qdrant/pgvector index, plus vector retrieval (`winnow.query`, CLI `winnow query`). Async-native (httpx). The embedder ships a deterministic placeholder (`default`) plus an OpenAI-compatible API adapter (`openai`).
+v0.6.0. Core pipeline runs end-to-end: fs/Confluence/GitHub/GitLab/S3/static-URL sources → extract → chunk → embed → memory/Qdrant/pgvector index, plus vector retrieval (`winnow.query`, CLI `winnow query`). Async-native (httpx). The embedder ships a deterministic placeholder (`default`) plus an OpenAI-compatible API adapter (`openai`).
 
 ## Formats
 
@@ -82,6 +82,7 @@ whatever is missing. See [docs/status.md](docs/status.md).
 | `github`    | blobs of a repository tree (REST API)                        | `repo`, `branch`, `path`, `include_globs`, `exclude_globs`, `api_token_env`     |
 | `gitlab`    | blobs of a project repository (REST API; self-hosted OK)     | `url`, `project`, `branch`, `path`, `include_globs`, `exclude_globs`, `api_token_env` |
 | `s3`        | text objects in a bucket (SigV4, no boto3; MinIO-compatible) | `url`, `bucket`, `access_key_env`, `secret_key_env`, `region`, `prefix`, `include_globs`, `exclude_globs` |
+| `static_url`| plain HTML pages served over HTTP(S), no JS needed            | `urls`, `api_token_env`, `max_bytes`, `timeout`                                                  |
 
 Every source accepts `retries`, `retry_backoff`, and `verify`.
 
@@ -89,6 +90,11 @@ Every source accepts `retries`, `retry_backoff`, and `verify`.
 subtree server-side, `include_globs` to ingest only matching paths, and
 `exclude_globs` to skip garbage (videos, logs, vendor dirs); exclude wins over
 include. With no globs, non-text files are filtered out automatically.
+
+`static_url` is incremental by default: pages are fingerprinted with their
+`ETag`/`Last-Modified` during a cheap `HEAD` (falling back to a content hash
+when a server serves neither), so unchanged pages are never re-downloaded and
+removed pages are pruned by the per-source reconcile pass.
 
 Example — ingest only `docs/**` from a bucket, skipping any media:
 

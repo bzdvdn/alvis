@@ -164,6 +164,30 @@ def s3(
     )
 
 
+def static_url(
+    urls: list[str],
+    api_token_env: str | None = None,
+    timeout: float = 20.0,
+    max_bytes: int | None = None,
+    retries: int = 3,
+    retry_backoff: float = 1.0,
+    verify: bool | str = True,
+) -> SourceConfig:
+    """Ingest plain HTML (or other text) pages served over HTTP(S), no JS."""
+    return SourceConfig(
+        type="static_url",
+        config={
+            "urls": urls,
+            **({"api_token_env": api_token_env} if api_token_env else {}),
+            **({"timeout": timeout} if timeout != 20.0 else {}),
+            **({"max_bytes": max_bytes} if max_bytes is not None else {}),
+            **({"retries": retries} if retries != 3 else {}),
+            **({"retry_backoff": retry_backoff} if retry_backoff != 1.0 else {}),
+            **({"verify": verify} if verify is not True else {}),
+        },
+    )
+
+
 def chunk(
     strategy: str = "auto",
     max_tokens: int = 500,

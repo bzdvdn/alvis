@@ -99,7 +99,8 @@ winnow init --source fs --index memory
 winnow init --source github --index pgvector     # pgvector uses dsn_env: POSTGRES_DSN
 ```
 
-Available sources: `fs`, `confluence`, `github`, `gitlab`, `s3`; available
+Available sources: `fs`, `confluence`, `github`, `gitlab`, `s3`, `static_url`;
+available
 indexes: `memory`, `qdrant`, `pgvector`. It refuses to overwrite an existing
 file unless `--force`.
 

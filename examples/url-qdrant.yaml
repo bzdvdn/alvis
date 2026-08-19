@@ -1,0 +1,29 @@
+# Ingest plain HTML pages (no JavaScript) on a schedule.
+# Incremental by default: pages are fingerprinted with ETag / Last-Modified,
+# so unchanged pages are not re-downloaded.
+pipeline:
+  source:
+    type: static_url
+    config:
+      urls:
+        - https://example.com/docs/
+        - https://example.com/docs/about
+      timeout: 20
+
+  extract:
+    strategy: auto
+
+  chunk:
+    strategy: auto
+    config:
+      max_tokens: 200
+      overlap: 20
+
+  embed:
+    type: default
+
+  index:
+    type: qdrant
+    config:
+      url: http://localhost:6333
+      collection: winnow_docs

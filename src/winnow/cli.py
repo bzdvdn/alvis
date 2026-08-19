@@ -125,6 +125,12 @@ _SOURCE_TEMPLATES: dict[str, dict[str, object]] = {
             "secret_key_env": "S3_SECRET_KEY",
         },
     },
+    "static_url": {
+        "type": "static_url",
+        "config": {
+            "urls": ["https://example.com/docs/"],
+        },
+    },
 }
 
 _INDEX_TEMPLATES: dict[str, dict[str, object]] = {
@@ -189,7 +195,7 @@ def init(
     source: str = typer.Option(  # noqa: B008
         "confluence",
         "--source",
-        help="Source adapter to scaffold (fs, confluence, github, gitlab, s3).",
+        help="Source adapter to scaffold (fs, confluence, github, gitlab, s3, static_url).",
     ),
     index: str = typer.Option(  # noqa: B008
         "qdrant",

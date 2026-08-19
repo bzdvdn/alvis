@@ -37,6 +37,7 @@ from winnow.sources import (
     GitHubSource,
     GitLabSource,
     S3Source,
+    StaticUrlSource,
 )
 from winnow.sources.base import Source
 
@@ -76,6 +77,8 @@ def build_source(
         return GitLabSource(**config.config, max_bytes=max_bytes)
     if config.type == "s3":
         return S3Source(**config.config, max_bytes=max_bytes)
+    if config.type == "static_url":
+        return StaticUrlSource(**config.config, max_bytes=max_bytes)
     plugin_factory = registry().factory("source", config.type)
     if plugin_factory is not None:
         return plugin_factory(config=config, max_bytes=max_bytes)  # type: ignore[return-value]

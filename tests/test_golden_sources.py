@@ -15,7 +15,14 @@ from pathlib import Path
 
 import pytest
 
-from winnow.sources import ConfluenceSource, FilesystemSource, GitHubSource, GitLabSource, S3Source
+from winnow.sources import (
+    ConfluenceSource,
+    FilesystemSource,
+    GitHubSource,
+    GitLabSource,
+    S3Source,
+    StaticUrlSource,
+)
 from winnow.testing import MockServer, artifacts_snapshot, assert_golden
 
 _S3_NS = "{http://s3.amazonaws.com/doc/2006-03-01/}"
@@ -172,3 +179,31 @@ async def test_golden_s3(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     artifacts = await source.fetch()
     assert_golden("s3", artifacts_snapshot(artifacts))
+
+
+@pytest.mark.golden
+async def test_golden_static_url() -> None:
+    server = MockServer()
+    server.on(
+        "GET",
+        "/",
+        content=(
+            b"<html><head><title>Winnow Docs</title></head>"
+            b"<body><h1>Static URL source</h1><p>Plain HTML ingesting.</p></body></html>"
+        ),
+    )
+    server.on(
+        "GET",
+        "/about",
+        content=(
+            b"<html><head><title>About</title></head>"
+            b"<body><h1>About Winnow</h1></body></html>"
+        ),
+    )
+
+    source = StaticUrlSource(
+        urls=["https://docs.example.com/", "https://docs.example.com/about"],
+        transport=server.transport,
+    )
+    artifacts = await source.fetch()
+    assert_golden("static_url", artifacts_snapshot(artifacts))
