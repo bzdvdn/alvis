@@ -57,8 +57,8 @@ Goal: freeze the public contract — Canonical Content Tree v1 + YAML schema v1.
 - [x] Retries in HttpClient: 429/5xx/network, exponential backoff + jitter, Retry-After; `retries`/`retry_backoff`/`verify` config — live-verified (survived Qdrant outage)
 - [x] Sources: GitHub, GitLab (self-hosted via `url`), S3 (SigV4, no boto3; MinIO-compatible) — include/exclude globs + prefix/path scoping; live-verified against MinIO (videos excluded, idempotent re-run)
 - [x] Indexes: PostgreSQL/pgvector (`winnow[pgindex]`, psycopg 3, idempotent upsert + reconcile)
-- [ ] Embedding abstraction: model-agnostic, batching + caching
-- [ ] CLI: config validation reports, pipeline dry-run graph
+- [x] Embedding abstraction: model-agnostic, batching + caching
+- [x] CLI: config validation reports, pipeline dry-run graph
 
 **Done when:** contract v1 frozen; migration path documented and tested.
 

@@ -20,6 +20,7 @@ class SizeChunker:
         self.overlap_chars = min(overlap_chars, max_chars // 2)
 
     async def chunk(self, document: Document) -> list[Chunk]:
+        """Split each section into character-budgeted chunks with overlap."""
         chunks: list[Chunk] = []
         for section in document.sections:
             text = _section_text(document, section)

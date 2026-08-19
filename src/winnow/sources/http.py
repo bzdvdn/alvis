@@ -104,6 +104,7 @@ class HttpClient:
         ok_status: tuple[int, ...] = (200, 201),
         raw: bool = False,
     ) -> dict[str, Any] | bytes:
+        """Perform a JSON request with retry/backoff; optionally return raw bytes."""
         url = self.base_url + path
         async with self._client() as client:
             for attempt in range(self.max_retries + 1):

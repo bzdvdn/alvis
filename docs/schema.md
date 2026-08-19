@@ -42,6 +42,10 @@ and only the core team may bump a major version.
   construct with version `1` and need no migration.
 - New extract setting `max_bytes` (memory-safe handling of large
   PDF/DOCX/XLSX) defaults to "no cap", preserving previous behaviour.
+- New optional `embed.config.cache` (embedding reuse: `true` = in-memory,
+  `{path: ...}` = on-disk) defaults to off, preserving previous behaviour.
+  Cache keys are scoped by model signature, so a model change can never
+  return stale vectors.
 - New optional `ChunkConfig` keys validate as integers but change nothing for
   existing strategies.
 - Runtime models are pydantic frozen models: serialization round-trips and

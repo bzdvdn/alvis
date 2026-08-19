@@ -87,3 +87,81 @@ def test_run_dry_run_rejects_unsupported(tmp_path: Path) -> None:
     result = runner.invoke(app, ["run", str(config), "--dry-run"])
     assert result.exit_code == 1
     assert "service_now" in result.output
+
+
+def test_validate_report_shows_stages_and_graph(tmp_path: Path) -> None:
+    config = tmp_path / "pipeline.yaml"
+    config.write_text(
+        "pipeline:\n"
+        "  source:\n"
+        "    type: fs\n"
+        "    config:\n"
+        f"      path: {tmp_path}\n"
+        "  chunk:\n"
+        "    strategy: size\n"
+        "    config:\n"
+        "      max_chars: 100\n"
+        "      overlap_chars: 10\n"
+        "  embed:\n"
+        "    type: openai\n"
+        "    config:\n"
+        "      model: text-embedding-3-small\n"
+        "  index:\n"
+        "    type: qdrant\n"
+        "    config:\n"
+        "      collection: winnow_docs\n",
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["validate", str(config)])
+    assert result.exit_code == 0
+    assert "is valid" in result.output
+    assert "source: fs" in result.output
+    assert "chunk: size (max_chars=100, overlap_chars=10)" in result.output
+    assert "embed: openai:text-embedding-3-small" in result.output
+    assert "index: qdrant" in result.output
+    assert "Pipeline graph" in result.output
+    assert "▼" in result.output
+
+
+def test_validate_json_report(tmp_path: Path) -> None:
+    import json
+
+    config = tmp_path / "pipeline.yaml"
+    config.write_text(
+        "pipeline:\n  source:\n    type: confluence\n  index:\n    type: qdrant\n",
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["validate", str(config), "--json"])
+    assert result.exit_code == 0
+    report = json.loads(result.output)
+    assert report["valid"] is True
+    assert report["contract"] == {"schema_version": 1, "cct": 1}
+    assert report["stages"]["source"] == "confluence"
+    assert "▼" in report["graph"]
+
+
+def test_validate_json_invalid_report(tmp_path: Path) -> None:
+    import json
+
+    config = tmp_path / "pipeline.yaml"
+    config.write_text(
+        "pipeline:\n  source:\n    type: service_now\n", encoding="utf-8"
+    )
+    result = runner.invoke(app, ["validate", str(config), "--json"])
+    assert result.exit_code == 1
+    report = json.loads(result.output)
+    assert report["valid"] is False
+    assert any("service_now" in p for p in report["problems"])
+
+
+def test_run_dry_run_prints_graph(tmp_path: Path) -> None:
+    config = tmp_path / "pipeline.yaml"
+    config.write_text(
+        "pipeline:\n  source:\n    type: fs\n    config:\n      path: /tmp\n"
+        "  index:\n    type: memory\n",
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["run", str(config), "--dry-run"])
+    assert result.exit_code == 0
+    assert "Pipeline graph" in result.output
+    assert "▼" in result.output

@@ -55,6 +55,7 @@ class GitHubSource:
         )
 
     async def fetch(self) -> list[Artifact]:
+        """Fetch the repository's wanted text blobs as artifacts."""
         tree = await self.client.request(
             "GET",
             f"/repos/{self.repo}/git/trees/{quote(self.branch)}",

@@ -212,11 +212,14 @@ def embed_openai(
     retries: int = 3,
     retry_backoff: float = 1.0,
     verify: bool | str = True,
+    cache: bool | dict[str, Any] | None = None,
 ) -> EmbedConfig:
     """Embed via an OpenAI-compatible ``/embeddings`` endpoint.
 
     Requires the endpoint to return OpenAI's response shape
     (``data[].embedding``); ``api_token_env`` is sent as ``Bearer``.
+    ``cache`` enables embedding reuse: ``True`` caches in memory, a
+    ``{"path": "..."}`` dict persists to disk across runs.
     """
     return EmbedConfig(
         type="openai",
@@ -228,6 +231,7 @@ def embed_openai(
             **({"retries": retries} if retries != 3 else {}),
             **({"retry_backoff": retry_backoff} if retry_backoff != 1.0 else {}),
             **({"verify": verify} if verify is not True else {}),
+            **({"cache": cache} if cache is not None else {}),
         },
     )
 

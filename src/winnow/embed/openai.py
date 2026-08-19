@@ -46,6 +46,7 @@ class ApiEmbedder:
             verify=verify,
             transport=transport,
         )
+        self.signature = f"openai:{model}"
 
     async def embed(self, chunk: Chunk) -> list[float]:
         """Embed a single chunk (result of :meth:`embed_batch` on ``[chunk]``)."""

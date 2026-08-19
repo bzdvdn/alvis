@@ -44,6 +44,7 @@ class SigV4Signer:
         query: dict[str, Any] | None,
         host: str,
     ) -> dict[str, str]:
+        """Return the AWS SigV4 signing headers for a request."""
         now = datetime.now(timezone.utc)
         amz_date = now.strftime("%Y%m%dT%H%M%SZ")
         datestamp = amz_date[:8]
@@ -171,6 +172,7 @@ class S3Source:
         )
 
     async def fetch(self) -> list[Artifact]:
+        """List the bucket and fetch the wanted text objects as artifacts."""
         artifacts: list[Artifact] = []
         for key in await self._list_keys():
             if not self._wanted(key):

@@ -27,6 +27,8 @@ class PipelineResult:
 
     documents_ingested: int
     chunks_indexed: int
+    embed_cache_hits: int = 0
+    embed_cache_misses: int = 0
 
 
 class PipelineEngine:
@@ -38,31 +40,85 @@ class PipelineEngine:
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> PipelineEngine:
+        """Build an engine from a pipeline YAML config file."""
         return cls(load_config(path))
 
     def describe(self) -> str:
         """Human-readable summary of the configured pipeline (dry-run output)."""
         index = self.config.index.type if self.config.index else "not configured"
-        if self.config.chunk.strategy == "size":
-            chunk_summary = (
-                f"size (max_chars={self.config.chunk.max_chars}, "
-                f"overlap_chars={self.config.chunk.overlap_chars})"
-            )
-        else:
-            chunk_summary = (
-                f"{self.config.chunk.strategy} "
-                f"(max_tokens={self.config.chunk.max_tokens}, "
-                f"overlap={self.config.chunk.overlap})"
-            )
         return (
-            f"  source: {self.config.source.type}\n"
+            f"  source: {self._source_summary()}\n"
             f"  extract: {self.config.extract.strategy}\n"
-            f"  chunk: {chunk_summary}\n"
-            f"  embed: {self.config.embed.type}\n"
+            f"  chunk: {self._chunk_summary()}\n"
+            f"  embed: {self._embed_summary()}\n"
             f"  index: {index}"
         )
 
+    def describe_graph(self) -> str:
+        """ASCII flowchart of the configured pipeline stages."""
+        edges = "\n".join(("  │", "  ▼"))
+        index = self.config.index.type if self.config.index else "not configured"
+        return "\n".join(
+            [
+                f"  source {self._source_summary()}",
+                *edges.split("\n"),
+                f"  extract {self.config.extract.strategy}",
+                *edges.split("\n"),
+                f"  chunk {self._chunk_summary()}",
+                *edges.split("\n"),
+                f"  embed {self._embed_summary()}",
+                *edges.split("\n"),
+                f"  index {index}",
+            ]
+        )
+
+    def _source_summary(self) -> str:
+        source = self.config.source
+        key = {
+            "fs": "path",
+            "confluence": "space",
+            "github": "repo",
+            "gitlab": "project",
+            "s3": "bucket",
+        }.get(source.type)
+        value = source.config.get(key) if key else None
+        if value is not None:
+            return f"{source.type} ({key}={value})"
+        return source.type
+
+    def _chunk_summary(self) -> str:
+        if self.config.chunk.strategy == "size":
+            return (
+                f"size (max_chars={self.config.chunk.max_chars}, "
+                f"overlap_chars={self.config.chunk.overlap_chars})"
+            )
+        return (
+            f"{self.config.chunk.strategy} "
+            f"(max_tokens={self.config.chunk.max_tokens}, "
+            f"overlap={self.config.chunk.overlap})"
+        )
+
+    def _embed_summary(self) -> str:
+        model = self.config.embed.config.get("model")
+        if model is not None:
+            return f"{self.config.embed.type}:{model}"
+        return self.config.embed.type
+
+    def _index_summary(self) -> str:
+        if self.config.index is None:
+            return "not configured"
+        index = self.config.index
+        key = {
+            "qdrant": "collection",
+            "pgvector": "table",
+        }.get(index.type)
+        value = index.config.get(key) if key else None
+        if value is not None:
+            return f"{index.type} ({key}={value})"
+        return index.type
+
     async def run(self) -> PipelineResult:
+        """Execute the configured pipeline: source → extract → chunk → embed → index."""
         problems = check_pipeline_supported(
             source=self.config.source.type,
             extract=self.config.extract.strategy,
@@ -113,14 +169,14 @@ class PipelineEngine:
 
         if indexer is not None and pending:
             chunks = [chunk for chunk, _ in pending]
-            batch = getattr(embedder, "embed_batch", None)
             try:
-                if batch is not None:
-                    vectors = await batch(chunks)
-                else:
-                    vectors = [await embedder.embed(chunk) for chunk in chunks]
+                vectors = await embedder.embed_batch(chunks)
             except (SourceError, ValueError) as exc:
                 raise PipelineError(f"embedding failed: {exc}") from exc
+            finally:
+                closer = getattr(embedder, "close", None)
+                if callable(closer):
+                    closer()
             for (chunk, artifact_hash), vector in zip(pending, vectors, strict=True):
                 await indexer.upsert(
                     chunk,
@@ -132,4 +188,9 @@ class PipelineEngine:
         if indexer is not None:
             await indexer.reconcile(source_id, current)
 
-        return PipelineResult(documents_ingested=documents, chunks_indexed=indexed)
+        return PipelineResult(
+            documents_ingested=documents,
+            chunks_indexed=indexed,
+            embed_cache_hits=getattr(embedder, "cache_hits", 0),
+            embed_cache_misses=getattr(embedder, "cache_misses", 0),
+        )

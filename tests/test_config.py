@@ -122,3 +122,57 @@ def test_cct_schema_version_on_document() -> None:
     loaded = Document.model_validate(document.model_dump())
     assert loaded == document
     assert loaded.schema_version == 1
+
+
+def test_embed_cache_bool_and_path(tmp_path: Path) -> None:
+    cfg = load_config(
+        write(
+            tmp_path,
+            "pipeline:\n"
+            "  source:\n    type: confluence\n"
+            "  embed:\n    type: openai\n"
+            "    config:\n      model: m\n      cache: true\n",
+        )
+    )
+    assert cfg.embed.cache_enabled is True
+    assert cfg.embed.cache_path is None
+
+    cfg = load_config(
+        write(
+            tmp_path,
+            "pipeline:\n"
+            "  source:\n    type: confluence\n"
+            "  embed:\n    type: openai\n"
+            "    config:\n      model: m\n      cache:\n        path: .winnow/cache\n",
+        )
+    )
+    assert cfg.embed.cache_enabled is True
+    assert cfg.embed.cache_path == ".winnow/cache"
+
+
+def test_embed_cache_disabled_by_default_and_explicit_false(tmp_path: Path) -> None:
+    cfg = load_config(
+        write(tmp_path, "pipeline:\n  source:\n    type: confluence\n")
+    )
+    assert cfg.embed.cache_enabled is False
+    assert cfg.embed.cache_path is None
+
+
+def test_embed_cache_invalid_shape_rejected(tmp_path: Path) -> None:
+    content = (
+        "pipeline:\n"
+        "  source:\n    type: confluence\n"
+        "  embed:\n    type: openai\n"
+        "    config:\n      model: m\n      cache: [1, 2]\n"
+    )
+    with pytest.raises(ConfigError, match="cache"):
+        load_config(write(tmp_path, content))
+
+    content = (
+        "pipeline:\n"
+        "  source:\n    type: confluence\n"
+        "  embed:\n    type: openai\n"
+        "    config:\n      model: m\n      cache:\n        path: 42\n"
+    )
+    with pytest.raises(ConfigError, match="cache.path"):
+        load_config(write(tmp_path, content))

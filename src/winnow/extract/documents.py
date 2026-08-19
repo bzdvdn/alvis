@@ -66,6 +66,7 @@ class PdfExtractor:
         return title, sections
 
     async def extract(self, artifact: Artifact) -> Document:
+        """Parse a PDF artifact into per-page sections (in a worker thread)."""
         title, sections = await asyncio.to_thread(self._parse, artifact.data)
         return _make_document(artifact, title, sections)
 
@@ -90,6 +91,7 @@ class DocxExtractor:
         buffer: list[str] = []
 
         def flush() -> None:
+            """Flush the buffered body as a section, then reset the buffer."""
             nonlocal heading, buffer
             body = _collapse(" ".join(buffer))
             if heading or body:
@@ -110,6 +112,7 @@ class DocxExtractor:
         return "", sections
 
     async def extract(self, artifact: Artifact) -> Document:
+        """Parse a DOCX artifact into heading-anchored sections (worker thread)."""
         title, sections = await asyncio.to_thread(self._parse, artifact.data)
         return _make_document(artifact, title, sections)
 
@@ -146,6 +149,7 @@ class XlsxExtractor:
         return "", sections
 
     async def extract(self, artifact: Artifact) -> Document:
+        """Parse an XLSX artifact into per-worksheet sections (worker thread)."""
         title, sections = await asyncio.to_thread(self._parse, artifact.data)
         return _make_document(artifact, title, sections)
 

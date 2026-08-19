@@ -25,6 +25,7 @@ class FilesystemSource:
         self.max_bytes = max_bytes
 
     async def fetch(self) -> list[Artifact]:
+        """Read ingestible text files under ``path`` into artifacts."""
         files = self._discover()
         artifacts: list[Artifact] = []
         for file_path in files:

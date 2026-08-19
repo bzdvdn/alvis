@@ -11,7 +11,14 @@ from winnow.config.models import (
     IndexConfig,
     SourceConfig,
 )
-from winnow.embed import ApiEmbedder, HashEmbedder
+from winnow.embed import (
+    ApiEmbedder,
+    CachingEmbedder,
+    Embedder,
+    FileEmbeddingCache,
+    HashEmbedder,
+    InMemoryEmbeddingCache,
+)
 from winnow.extract import AutoExtractor
 from winnow.index import MemoryIndex, PgVectorIndex, QdrantIndex
 from winnow.registry import KNOWN_SOURCES
@@ -48,6 +55,7 @@ def build_source(
     *,
     max_bytes: int | None = None,
 ) -> FilesystemSource | ConfluenceSource | GitHubSource | GitLabSource | S3Source:
+    """Build the source adapter declared by ``config``."""
     if config.type == "fs":
         return FilesystemSource(**config.config, max_bytes=max_bytes)
     if config.type == "confluence":
@@ -65,12 +73,14 @@ def build_source(
 
 
 def build_extractor(config: ExtractConfig) -> AutoExtractor:
+    """Build the extraction strategy declared by ``config``."""
     if config.strategy == "auto":
         return AutoExtractor()
     raise ConfigError(f"extract strategy {config.strategy!r} is not implemented")
 
 
 def build_chunker(config: ChunkConfig) -> AutoChunker | SectionsChunker | SizeChunker:
+    """Build the chunking strategy declared by ``config``."""
     if config.strategy == "auto":
         return AutoChunker(max_tokens=config.max_tokens, overlap=config.overlap)
     if config.strategy == "sections":
@@ -80,15 +90,33 @@ def build_chunker(config: ChunkConfig) -> AutoChunker | SectionsChunker | SizeCh
     raise ConfigError(f"chunk strategy {config.strategy!r} is not implemented")
 
 
-def build_embedder(config: EmbedConfig) -> HashEmbedder | ApiEmbedder:
+def build_embedder(
+    config: EmbedConfig,
+    *,
+    enable_cache: bool = True,
+) -> Embedder:
+    """Build the embedder declared by ``config``, optionally caching vectors."""
     if config.type == "default":
-        return HashEmbedder()
-    if config.type == "openai":
-        return ApiEmbedder(**config.config)
-    raise ConfigError(f"embed type {config.type!r} is not implemented")
+        delegate: Embedder = HashEmbedder()
+    elif config.type == "openai":
+        settings = dict(config.config)
+        settings.pop("cache", None)
+        delegate = ApiEmbedder(**settings)
+    else:
+        raise ConfigError(f"embed type {config.type!r} is not implemented")
+
+    if not enable_cache or not config.cache_enabled:
+        return delegate
+    cache = (
+        FileEmbeddingCache(config.cache_path)
+        if config.cache_path
+        else InMemoryEmbeddingCache()
+    )
+    return CachingEmbedder(delegate, cache=cache)
 
 
 def build_indexer(config: IndexConfig) -> MemoryIndex | QdrantIndex | PgVectorIndex:
+    """Build the vector index declared by ``config``."""
     if config.type == "memory":
         return MemoryIndex()
     if config.type == "qdrant":

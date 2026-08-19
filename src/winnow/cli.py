@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
 import typer
@@ -88,12 +89,22 @@ def init(
 
 
 @app.command()
-def validate(config: str = typer.Argument(..., help="Path to the pipeline YAML config.")) -> None:  # noqa: B008
-    """Validate the pipeline YAML config."""
+def validate(
+    config: str = typer.Argument(..., help="Path to the pipeline YAML config."),  # noqa: B008
+    json_output: bool = typer.Option(  # noqa: B008
+        False,
+        "--json",
+        help="Emit a machine-readable validation report as JSON.",
+    ),
+) -> None:
+    """Validate the pipeline YAML config and print a report."""
     try:
         pipeline = load_config(config)
     except ConfigError as exc:
-        typer.echo(f"Invalid config:\n{exc}", err=True)
+        if json_output:
+            typer.echo(json.dumps({"valid": False, "error": str(exc)}))
+        else:
+            typer.echo(f"Invalid config:\n{exc}", err=True)
         raise typer.Exit(1) from exc
 
     problems = check_pipeline_supported(
@@ -103,6 +114,34 @@ def validate(config: str = typer.Argument(..., help="Path to the pipeline YAML c
         embed=pipeline.embed.type,
         index=pipeline.index.type if pipeline.index else None,
     )
+
+    engine = PipelineEngine(pipeline)
+    stages: dict[str, str] = {
+        "source": engine._source_summary(),
+        "extract": pipeline.extract.strategy,
+        "chunk": engine._chunk_summary(),
+        "embed": engine._embed_summary(),
+        "index": engine._index_summary(),
+    }
+    graph = engine.describe_graph()
+    report = {
+        "valid": not problems,
+        "path": config,
+        "contract": {
+            "schema_version": pipeline.schema_version,
+            "cct": CCT_SCHEMA_VERSION,
+        },
+        "stages": stages,
+        "problems": problems,
+        "graph": graph,
+    }
+
+    if json_output:
+        typer.echo(json.dumps(report, indent=2))
+        if problems:
+            raise typer.Exit(1)
+        return
+
     if problems:
         typer.echo("Invalid config:\n" + "\n".join(f"  {p}" for p in problems), err=True)
         raise typer.Exit(1)
@@ -111,12 +150,14 @@ def validate(config: str = typer.Argument(..., help="Path to the pipeline YAML c
     typer.echo(
         f"  contract: schema {pipeline.schema_version} / cct {CCT_SCHEMA_VERSION}"
     )
-    typer.echo(f"  source: {pipeline.source.type}")
-    typer.echo(f"  extract: {pipeline.extract.strategy}")
-    typer.echo(f"  chunk: {pipeline.chunk.strategy} (max_tokens={pipeline.chunk.max_tokens})")
-    typer.echo(f"  embed: {pipeline.embed.type}")
-    index_type = pipeline.index.type if pipeline.index else "not configured"
-    typer.echo(f"  index: {index_type}")
+    typer.echo("\n  Stages")
+    typer.echo(f"    source: {stages['source']}")
+    typer.echo(f"    extract: {stages['extract']}")
+    typer.echo(f"    chunk: {stages['chunk']}")
+    typer.echo(f"    embed: {stages['embed']}")
+    typer.echo(f"    index: {stages['index']}")
+    typer.echo("\n  Pipeline graph")
+    typer.echo("\n".join(f"    {line}" for line in graph.splitlines()))
 
 
 @app.command()
@@ -169,6 +210,8 @@ def run(
                 continue
             typer.echo(f"Pipeline dry-run for {config}:")
             typer.echo(engine.describe())
+            typer.echo("\n  Pipeline graph")
+            typer.echo("\n".join(f"    {line}" for line in engine.describe_graph().splitlines()))
         if invalid:
             raise typer.Exit(1)
         return
@@ -196,6 +239,11 @@ def run(
                 f"{config}: {result.documents_ingested} documents, "
                 f"{result.chunks_indexed} chunks indexed"
             )
+            if result.embed_cache_hits or result.embed_cache_misses:
+                typer.echo(
+                    f"  embed cache: {result.embed_cache_hits} hits, "
+                    f"{result.embed_cache_misses} misses"
+                )
     if failed:
         raise typer.Exit(1)
 

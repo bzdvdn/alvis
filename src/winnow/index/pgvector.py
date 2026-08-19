@@ -105,6 +105,7 @@ class PgVectorIndex:
         source_id: str,
         artifact_hash: str,
     ) -> None:
+        """Insert or replace a chunk row (deterministic id, ``ON CONFLICT``)."""
         await self._ensure_table(len(vector))
         statement = _psql().SQL(
             "INSERT INTO {} (id, source_uri, text, source, artifact_hash, embedding, metadata) "
@@ -138,6 +139,7 @@ class PgVectorIndex:
         source_id: str,
         current: Mapping[str, str],
     ) -> None:
+        """Delete this source's rows not present in ``current``."""
         if current:
             delete = _psql().SQL(
                 "DELETE FROM {} WHERE source = %s AND "

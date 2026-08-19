@@ -24,6 +24,7 @@ class CsvExtractor:
     """Converts CSV into row sections (content type ``text/csv``)."""
 
     async def extract(self, artifact: Artifact) -> Document:
+        """Parse a CSV artifact into one ``Row N`` section per line."""
         text = artifact.data.decode("utf-8", errors="replace")
         title = str(artifact.metadata.get("title", ""))
         if not text.strip():

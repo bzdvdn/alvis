@@ -21,6 +21,7 @@ class JsonExtractor:
     """Converts JSON into heading-anchored sections (``application/json``)."""
 
     async def extract(self, artifact: Artifact) -> Document:
+        """Parse a JSON artifact into dotted-path sections."""
         text = artifact.data.decode("utf-8", errors="replace")
         try:
             data = json.loads(text)

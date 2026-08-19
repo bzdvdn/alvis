@@ -11,6 +11,7 @@ class Chunker(Protocol):
     """Splits canonical content into embeddable chunks."""
 
     async def chunk(self, document: Document) -> list[Chunk]:
+        """Split a document into embeddable chunks (contract — see class docstring)."""
         ...
 
 
@@ -26,6 +27,7 @@ class AutoChunker:
         self.overlap = min(overlap, max_tokens)
 
     async def chunk(self, document: Document) -> list[Chunk]:
+        """Split a document's sections into token-budgeted chunks."""
         chunks: list[Chunk] = []
         for section in document.sections:
             text = _section_text(document, section)

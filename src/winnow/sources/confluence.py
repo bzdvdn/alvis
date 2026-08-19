@@ -37,6 +37,7 @@ class ConfluenceSource:
         )
 
     async def fetch(self) -> list[Artifact]:
+        """Fetch all pages of the configured space as HTML artifacts."""
         pages = await self.client.request(
             "GET",
             "/rest/api/content",

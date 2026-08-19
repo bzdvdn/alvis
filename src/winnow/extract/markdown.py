@@ -14,6 +14,7 @@ class MarkdownExtractor:
     """Splits plain text on heading lines (``#``..``######``)."""
 
     async def extract(self, artifact: Artifact) -> Document:
+        """Split a text artifact into heading-anchored sections."""
         text = artifact.data.decode("utf-8", errors="replace")
         sections: list[Section] = []
         current_heading = ""

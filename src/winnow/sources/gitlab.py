@@ -66,6 +66,7 @@ class GitLabSource:
         )
 
     async def fetch(self) -> list[Artifact]:
+        """Fetch the project's wanted text blobs as artifacts."""
         artifacts: list[Artifact] = []
         for item in await self._iter_tree():
             file_path = item["path"]

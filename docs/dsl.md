@@ -56,5 +56,29 @@ parameters with docstrings.
   with cosine scores).
 - `describe(config)` — human-readable dry-run summary.
 
+## Embedding cache
+
+`dsl.embed_openai(..., cache=...)` enables embedding reuse so unchanged
+chunks are not re-embedded on later runs:
+
+- `cache=True` — in-memory (per-process, dedups within a run).
+- `cache={"path": ".winnow/embeddings.cache"}` — on-disk, survives restarts.
+- omitted/`False` — no cache (default).
+
+```python
+cfg = dsl.pipeline(
+    dsl.fs("docs"),
+    embed=dsl.embed_openai(
+        base_url="https://api.openai.com/v1",
+        model="text-embedding-3-small",
+        cache={"path": ".winnow/embeddings.cache"},
+    ),
+    index=dsl.qdrant(url="http://localhost:6333", collection="winnow_docs"),
+)
+```
+
+Cache keys are content hashes scoped by model signature, so switching models
+never serves stale vectors. Query embeddings are never cached.
+
 See also [examples/python_dsl.py](../examples/python_dsl.py), which mirrors
 `examples/s3-qdrant.yaml` and runs against the docker-compose stack.

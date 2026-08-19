@@ -27,6 +27,7 @@ class Extractor(Protocol):
     """Turns an artifact into a canonical document."""
 
     async def extract(self, artifact: Artifact) -> Document:
+        """Turn an artifact into a canonical document (contract — see class docstring)."""
         ...
 
 
@@ -34,6 +35,7 @@ class AutoExtractor:
     """Dispatches to a format extractor based on the artifact content type."""
 
     async def extract(self, artifact: Artifact) -> Document:
+        """Dispatch to the extractor matching the artifact's content type."""
         content_type = artifact.content_type
         if content_type in {"text/markdown", "text/plain"}:
             return await MarkdownExtractor().extract(artifact)

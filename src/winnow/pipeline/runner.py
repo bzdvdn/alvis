@@ -104,7 +104,7 @@ async def query_async(
     cfg = _load(config)
     if not text.strip():
         raise ConfigError("query text must not be empty")
-    embedder = build_embedder(cfg.embed)
+    embedder = build_embedder(cfg.embed, enable_cache=False)
     if indexer is None:
         if cfg.index is None:
             raise ConfigError("query requires an 'index' stage in the config")

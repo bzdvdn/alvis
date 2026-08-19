@@ -48,6 +48,7 @@ class QdrantIndex:
         source_id: str,
         artifact_hash: str,
     ) -> None:
+        """Upsert a chunk point, creating the collection on demand."""
         await self._ensure_collection(len(vector))
         point = {
             "id": str(point_id(chunk.source_uri, chunk.text)),
@@ -72,6 +73,7 @@ class QdrantIndex:
         source_id: str,
         current: Mapping[str, str],
     ) -> None:
+        """Delete this source's stale points after scrolling them by ``_source``."""
         filter_payload = {
             "must": [{"key": "_source", "match": {"value": source_id}}]
         }

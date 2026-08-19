@@ -62,7 +62,8 @@ live in [docs/schema.md](docs/schema.md).
 pip install -e .
 winnow --version
 winnow init                # scaffold winnow.yaml
-winnow validate winnow.yaml
+winnow validate winnow.yaml              # validation report + pipeline graph
+winnow validate winnow.yaml --json       # machine-readable report for CI
 winnow run examples/hello-pipeline.yaml   # zero-dependency hello world
 winnow run winnow.yaml --dry-run          # describe pipeline without running
 ```
@@ -156,6 +157,42 @@ pipeline:
 Chunks are embedded in batches (`batch_size`) through the same
 retry/backoff machinery as sources, and the Qdrant collection is created
 with whatever dimensionality the model returns.
+
+#### Embedding cache
+
+Re-running a pipeline re-embeds every chunk unless you enable the cache.
+`cache: true` keeps vectors in memory for the process; a dict with `path`
+persists them to disk, so unchanged chunks are served from a previous run
+instead of hitting the embeddings endpoint:
+
+```yaml
+pipeline:
+  source:
+    type: fs
+    config:
+      path: ./docs
+  embed:
+    type: openai
+    config:
+      base_url: https://api.openai.com/v1
+      model: text-embedding-3-small
+      api_token_env: OPENAI_API_KEY
+      cache:
+        path: .winnow/embeddings.cache
+  index:
+    type: qdrant
+    config:
+      url: http://localhost:6333
+      collection: winnow_docs
+```
+
+Keys are derived from the content hash **and** the model signature, so
+switching models never serves stale vectors. Runs report hit/miss counts:
+
+```text
+pipeline.yaml: 12 documents, 87 chunks indexed
+  embed cache: 85 hits, 2 misses
+```
 
 ### Chunk strategies
 

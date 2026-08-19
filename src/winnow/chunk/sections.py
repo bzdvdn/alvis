@@ -23,6 +23,7 @@ class SectionsChunker:
         self.overlap = min(overlap, max_tokens)
 
     async def chunk(self, document: Document) -> list[Chunk]:
+        """Produce one chunk per section, repeating the heading on continuations."""
         chunks: list[Chunk] = []
         for section in document.sections:
             text = _section_text(document, section)
