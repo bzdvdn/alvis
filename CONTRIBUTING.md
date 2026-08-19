@@ -239,3 +239,6 @@ example + test + docs. External plugins are tracked in [docs/plugins.md]
 - Any change to the YAML contract or Canonical Content Tree is an RFC-first
   change.
 - No feature ships without the chapter it documents.
+- Breaking a stable-surface name (see [docs/versioning.md](docs/versioning.md))
+  needs a semver `MAJOR` (or a `MINOR` before `1.0.0`), a `deprecated()`
+  warning cycle, and a changelog line — never a silent break.

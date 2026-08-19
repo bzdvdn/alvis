@@ -183,7 +183,7 @@ CI builds and publishes `bzdvdn/winnow` (linux/amd64 + linux/arm64) for every
 and just pull:
 
 ```bash
-docker pull bzdvdn/winnow:v1.0.0
+docker pull bzdvdn/winnow:v0.6.0
 ```
 
 The image runs as an unprivileged `winnow` user in `/workspace`; incremental
@@ -437,6 +437,7 @@ the latter only against trusted internal endpoints).
 - [Contributing](CONTRIBUTING.md) — how to write a connector (cover page: connector fixture + golden tests)
 - [Plugin registry](docs/plugins.md) — built-in and community plugins (v1.1 SDK)
 - [Observability](docs/observability.md) — structured logging, metrics, tracing, Prometheus export
+- [Versioning & deprecation](docs/versioning.md) — semver, stable surface, deprecation window
 - [Python DSL guide](docs/dsl.md) — describing pipelines from code
 - [Constitution](CONSTITUTION.md) — purpose, scope, open-source strategy
 - [Roadmap](ROADMAP.md) — build plan

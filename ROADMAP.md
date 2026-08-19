@@ -100,7 +100,7 @@ Goal: third parties can extend Winnow without touching the core.
 
 Goal: Winnow maintains itself; the community drives breadth.
 
-- [ ] Stable plugin API (semver, deprecation window)
+- [x] Stable plugin API (semver, deprecation window) — [docs/versioning.md](docs/versioning.md) fixes the package semver + stable surface (plugin SDK, config, CCT, engine/result, adapter protocols) at `1.0.0`; `winnow.deprecated` provides the loud, once-per-callsite warning cycle with a named removal version; breaking a stable name requires a MAJOR and a warning cycle (see CONTRIBUTING cross-cutting rules)
 - [x] Deployable container — multi-stage `Dockerfile` (slim base, all extras, non-root `winnow` user, entrypoint `winnow`) ships the product as an image driven purely by mounted YAML; built and smoke-verified (fs → memory, cross-container incremental state)
 - [ ] Managed/hosted offering evaluation (separate distribution, never a fork)
 - [x] Observability hooks — structured logging (JSON/text via `setup_logging`), in-process metrics with optional Prometheus backing (`winnow[observability]`), optional OpenTelemetry spans, `--log-json`/`--log-level` on the CLI
