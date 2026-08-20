@@ -1,4 +1,4 @@
-"""Minimal Confluence REST mock for developing Winnow locally.
+"""Minimal Confluence REST mock for developing Alvis locally.
 
 Implements the two endpoints the ConfluenceSource adapter talks to:
 
@@ -20,10 +20,10 @@ SPACE_KEY = "TEAM"
 
 PAGES: dict[str, dict] = {
     "100": {
-        "title": "Winnow Overview",
+        "title": "Alvis Overview",
         "version": 3,
         "html": (
-            "<h1>Winnow Overview</h1><p>Winnow is a no-code knowledge "
+            "<h1>Alvis Overview</h1><p>Alvis is a no-code knowledge "
             "ingestion engine for corporate knowledge bases.</p>"
             "<h2>Sources</h2><p>It ingests from Confluence, GitLab and S3.</p>"
             "<h2>Pipeline</h2><p>Source to artifact to extraction to chunking "

@@ -3,7 +3,7 @@ pipeline:
     type: s3
     config:
       url: http://localhost:9000
-      bucket: winnow
+      bucket: alvis
       access_key_env: MINIO_ACCESS_KEY
       secret_key_env: MINIO_SECRET_KEY
   embed:
@@ -15,4 +15,4 @@ pipeline:
     type: qdrant
     config:
       url: http://localhost:6333
-      collection: winnow-s3
+      collection: alvis-s3

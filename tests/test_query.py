@@ -9,10 +9,10 @@ from typing import Any
 import httpx
 import pytest
 
-from winnow import dsl, query, query_async, run, run_async
-from winnow.config import ConfigError
-from winnow.core.models import Chunk, SearchHit
-from winnow.index import MemoryIndex, QdrantIndex
+from alvis import dsl, query, query_async, run, run_async
+from alvis.config import ConfigError
+from alvis.core.models import Chunk, SearchHit
+from alvis.index import MemoryIndex, QdrantIndex
 
 
 async def _seed_memory(points: list[tuple[str, list[float], dict[str, Any]]]) -> MemoryIndex:
@@ -58,7 +58,7 @@ async def test_query_roundtrip_with_shared_memory_index(tmp_path: Path) -> None:
     docs = tmp_path / "docs"
     docs.mkdir()
     (docs / "install.md").write_text(
-        "# Installing\n\npip install winnow\n\n# Run\n\nwinnow run pipeline.yaml\n",
+        "# Installing\n\npip install alvis\n\n# Run\n\nalvis run pipeline.yaml\n",
         encoding="utf-8",
     )
     config = dsl.pipeline(
@@ -138,7 +138,7 @@ async def test_qdrant_search_parses_results_and_scores() -> None:
 def test_pgvector_search_builds_sql() -> None:
     import asyncio
 
-    from winnow.index import PgVectorIndex
+    from alvis.index import PgVectorIndex
 
     class _Cursor:
         async def fetchall(self) -> list[tuple[object, ...]]:
@@ -185,8 +185,8 @@ def test_cli_query_reports_hits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 
     from typer.testing import CliRunner
 
-    from winnow.cli import app
-    from winnow.index import MemoryIndex
+    from alvis.cli import app
+    from alvis.index import MemoryIndex
 
     config = tmp_path / "p.yaml"
     config.write_text(
@@ -200,15 +200,15 @@ def test_cli_query_reports_hits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
         encoding="utf-8",
     )
     indexer = MemoryIndex()
-    from winnow.embed.hash import HashEmbedder
+    from alvis.embed.hash import HashEmbedder
 
     embedder = HashEmbedder()
     query_vector = asyncio.run(
-        embedder.embed(Chunk(text="install winnow", source_uri="q"))
+        embedder.embed(Chunk(text="install alvis", source_uri="q"))
     )
     asyncio.run(
         indexer.upsert(
-            Chunk(text="install winnow", source_uri="u/install", metadata={"heading": "H"}),
+            Chunk(text="install alvis", source_uri="u/install", metadata={"heading": "H"}),
             query_vector,
             source_id="s",
             artifact_hash="h",
@@ -218,19 +218,19 @@ def test_cli_query_reports_hits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     def seeded(*args: object, **kwargs: object) -> object:
         return indexer
 
-    monkeypatch.setattr("winnow.pipeline.runner.build_indexer", seeded)
+    monkeypatch.setattr("alvis.pipeline.runner.build_indexer", seeded)
 
     runner = CliRunner()
-    result = runner.invoke(app, ["query", str(config), "--text", "install winnow"])
+    result = runner.invoke(app, ["query", str(config), "--text", "install alvis"])
     assert result.exit_code == 0
     assert "u/install" in result.output
-    assert "install winnow" in result.output
+    assert "install alvis" in result.output
 
 
 def test_cli_query_no_matches(tmp_path: Path) -> None:
     from typer.testing import CliRunner
 
-    from winnow.cli import app
+    from alvis.cli import app
 
     config = tmp_path / "p.yaml"
     config.write_text(
@@ -252,7 +252,7 @@ def test_cli_query_no_matches(tmp_path: Path) -> None:
 def test_cli_query_missing_config(tmp_path: Path) -> None:
     from typer.testing import CliRunner
 
-    from winnow.cli import app
+    from alvis.cli import app
 
     runner = CliRunner()
     result = runner.invoke(

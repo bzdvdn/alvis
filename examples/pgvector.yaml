@@ -1,6 +1,6 @@
 # Index into PostgreSQL + pgvector (heading-anchored chunking).
-# Requires:  docker compose up -d postgres  and  pip install winnow[pgindex]
-#   winnow run examples/pgvector.yaml
+# Requires:  docker compose up -d postgres  and  pip install alvis[pgindex]
+#   alvis run examples/pgvector.yaml
 pipeline:
   source:
     type: fs
@@ -22,5 +22,5 @@ pipeline:
   index:
     type: pgvector
     config:
-      dsn: postgresql://winnow:winnow@localhost:5433/winnow
-      table: winnow_chunks
+      dsn: postgresql://alvis:alvis@localhost:5433/alvis
+      table: alvis_chunks

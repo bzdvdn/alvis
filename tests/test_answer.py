@@ -9,15 +9,15 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from winnow.answer import Synthesizer, build_answer, citation_answer
-from winnow.core.models import SearchHit
-from winnow.testing import MockServer
+from alvis.answer import Synthesizer, build_answer, citation_answer
+from alvis.core.models import SearchHit
+from alvis.testing import MockServer
 
 
 def _hits() -> list[SearchHit]:
     return [
         SearchHit(
-            text="Winnow re-runs are idempotent: identical content is overwritten.",
+            text="Alvis re-runs are idempotent: identical content is overwritten.",
             source_uri="docs/idempotency.md",
             metadata={"title": "idempotency"},
             score=0.91,

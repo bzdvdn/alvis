@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from winnow.chunk import SectionsChunker
-from winnow.core.models import Document, Section
+from alvis.chunk import SectionsChunker
+from alvis.core.models import Document, Section
 
 
 async def test_sections_chunker_one_chunk_per_section() -> None:

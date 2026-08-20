@@ -3,8 +3,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from winnow.index import QdrantIndex
-from winnow.sources.base import SourceError
+from alvis.index import QdrantIndex
+from alvis.sources.base import SourceError
 
 
 def _mock_transport(handler) -> httpx.MockTransport:
@@ -12,7 +12,7 @@ def _mock_transport(handler) -> httpx.MockTransport:
 
 
 async def _upsert(index, text="hello", uri="u", vector=None) -> None:
-    from winnow.core.models import Chunk
+    from alvis.core.models import Chunk
 
     await index.upsert(
         Chunk(text=text, source_uri=uri, metadata={"heading": "H"}),
@@ -153,7 +153,7 @@ async def test_qdrant_document_id_declared_by_source() -> None:
     index = QdrantIndex(url="http://localhost:6333", collection="test")
     index.client.transport = _mock_transport(handler)
 
-    from winnow.core.models import Chunk
+    from alvis.core.models import Chunk
 
     await index.upsert(
         Chunk(text="t", source_uri="https://x/a", metadata={"documentId": "blob-42"}),
@@ -174,7 +174,7 @@ async def test_qdrant_document_id_falls_back_to_uri() -> None:
     index = QdrantIndex(url="http://localhost:6333", collection="test")
     index.client.transport = _mock_transport(handler)
 
-    from winnow.core.models import Chunk
+    from alvis.core.models import Chunk
 
     await index.upsert(
         Chunk(text="t", source_uri="https://x/a"),
@@ -192,7 +192,7 @@ async def test_qdrant_rejects_metadata_in_reserved_namespace() -> None:
     index = QdrantIndex(url="http://localhost:6333", collection="test")
     index.client.transport = _mock_transport(handler)
 
-    from winnow.core.models import Chunk
+    from alvis.core.models import Chunk
 
     with pytest.raises(ValueError, match="reserved"):
         await index.upsert(

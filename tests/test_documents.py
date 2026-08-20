@@ -6,14 +6,14 @@ import pytest
 from docx import Document as DocxDocument
 from openpyxl import Workbook
 
-from winnow.core.models import Artifact
-from winnow.extract import AutoExtractor, DocxExtractor, PdfExtractor, XlsxExtractor
+from alvis.core.models import Artifact
+from alvis.extract import AutoExtractor, DocxExtractor, PdfExtractor, XlsxExtractor
 
 
 def _artifact(content_type: str, data: bytes) -> Artifact:
     return Artifact(
         step_id="s1",
-        uri="s3://winnow/report",
+        uri="s3://alvis/report",
         content_type=content_type,
         data=data,
     )
@@ -46,7 +46,7 @@ def xlsx_bytes() -> bytes:
 
 @pytest.fixture()
 def pdf_bytes() -> bytes:
-    return _minimal_pdf("Hello Winnow PDF")
+    return _minimal_pdf("Hello Alvis PDF")
 
 
 def _minimal_pdf(text: str) -> bytes:
@@ -83,7 +83,7 @@ def _minimal_pdf(text: str) -> bytes:
 async def test_pdf_extractor(pdf_bytes: bytes) -> None:
     document = await PdfExtractor().extract(_artifact("application/pdf", pdf_bytes))
     assert document.sections[0].heading == "Page 1"
-    assert "Hello Winnow" in document.sections[0].body
+    assert "Hello Alvis" in document.sections[0].body
 
 
 async def test_docx_extractor(docx_bytes: bytes) -> None:
@@ -131,7 +131,7 @@ async def test_auto_dispatches_by_content_type(
 
 
 async def test_fs_source_ingests_documents(docx_bytes: bytes, tmp_path) -> None:
-    from winnow.sources import FilesystemSource
+    from alvis.sources import FilesystemSource
 
     doc_path = tmp_path / "report.docx"
     doc_path.write_bytes(docx_bytes)
@@ -144,7 +144,7 @@ async def test_fs_source_ingests_documents(docx_bytes: bytes, tmp_path) -> None:
 
 
 async def test_e2e_pdf_pipeline(pdf_bytes: bytes, tmp_path) -> None:
-    from winnow import dsl, run_async
+    from alvis import dsl, run_async
 
     (tmp_path / "note.pdf").write_bytes(pdf_bytes)
     config = dsl.pipeline(dsl.fs(str(tmp_path)), index=dsl.memory())

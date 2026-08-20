@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from winnow import dsl, run_async, watch_async
-from winnow.config import ConfigError
-from winnow.docstore import DocEntry, DocStore, RunRecord
-from winnow.errors import PipelineError
-from winnow.factories import source_identity
-from winnow.index import MemoryIndex
-from winnow.pipeline.engine import PipelineResult, pipeline_signature
+from alvis import dsl, run_async, watch_async
+from alvis.config import ConfigError
+from alvis.docstore import DocEntry, DocStore, RunRecord
+from alvis.errors import PipelineError
+from alvis.factories import source_identity
+from alvis.index import MemoryIndex
+from alvis.pipeline.engine import PipelineResult, pipeline_signature
 
 
 def _write(corpus: Path, name: str, body: str) -> None:

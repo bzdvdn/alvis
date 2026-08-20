@@ -1,4 +1,4 @@
-# Winnow
+# Alvis
 
 Knowledge ingestion and retrieval engine. Build corporate knowledge bases from heterogeneous sources (GitLab, Confluence, S3; Markdown, HTML, PDF, DOCX, XLSX, CSV) driven by a YAML pipeline — or described from Python with the typed DSL.
 
@@ -9,7 +9,7 @@ Source → Artifact → Extraction → Canonical Content Tree → Chunking → E
 
 ## Status
 
-v0.6.0. Core pipeline runs end-to-end: fs/Confluence/GitHub/GitLab/S3/static-URL sources → extract → chunk → embed → memory/Qdrant/pgvector index, plus vector retrieval (`winnow.query`, CLI `winnow query`). Async-native (httpx). The embedder ships a deterministic placeholder (`default`) plus an OpenAI-compatible API adapter (`openai`).
+v0.6.0. Core pipeline runs end-to-end: fs/Confluence/GitHub/GitLab/S3/static-URL sources → extract → chunk → embed → memory/Qdrant/pgvector index, plus vector retrieval (`alvis.query`, CLI `alvis query`). Async-native (httpx). The embedder ships a deterministic placeholder (`default`) plus an OpenAI-compatible API adapter (`openai`).
 
 ## Formats
 
@@ -60,17 +60,17 @@ live in [docs/schema.md](docs/schema.md).
 
 ```bash
 pip install -e .
-winnow --version
-winnow init                # scaffold winnow.yaml
-winnow validate winnow.yaml              # validation report + pipeline graph
-winnow validate winnow.yaml --json       # machine-readable report for CI
-winnow run examples/hello-pipeline.yaml   # zero-dependency hello world
-winnow run winnow.yaml --dry-run          # describe pipeline without running
-winnow status examples/hello-pipeline.yaml  # source health, last run, index count
+alvis --version
+alvis init                # scaffold alvis.yaml
+alvis validate alvis.yaml              # validation report + pipeline graph
+alvis validate alvis.yaml --json       # machine-readable report for CI
+alvis run examples/hello-pipeline.yaml   # zero-dependency hello world
+alvis run alvis.yaml --dry-run          # describe pipeline without running
+alvis status examples/hello-pipeline.yaml  # source health, last run, index count
 ```
 
 Secrets are referenced by name (`api_token_env`, `dsn_env`, ...) from a
-`.env` in the project root (or `--env-file`); `winnow run` fails fast listing
+`.env` in the project root (or `--env-file`); `alvis run` fails fast listing
 whatever is missing. See [docs/status.md](docs/status.md).
 
 ## Sources
@@ -104,7 +104,7 @@ pipeline:
     type: s3
     config:
       url: http://localhost:9000
-      bucket: winnow
+      bucket: alvis
       access_key_env: MINIO_ACCESS_KEY
       secret_key_env: MINIO_SECRET_KEY
       prefix: docs
@@ -119,99 +119,99 @@ MinIO):
 
 ```bash
 docker compose up -d --build
-winnow run examples/confluence-qdrant.yaml
-winnow run examples/s3-qdrant.yaml        # needs MINIO_ACCESS_KEY / MINIO_SECRET_KEY env vars
+alvis run examples/confluence-qdrant.yaml
+alvis run examples/s3-qdrant.yaml        # needs MINIO_ACCESS_KEY / MINIO_SECRET_KEY env vars
 # verify: points in the collections
-curl http://localhost:6333/collections/winnow_docs
-curl http://localhost:6333/collections/winnow-s3
+curl http://localhost:6333/collections/alvis_docs
+curl http://localhost:6333/collections/alvis-s3
 docker compose down          # stop services
 ```
 
 The mock Confluence implements the `/rest/api` contract our adapter consumes
 (`docker/mock-confluence/`); swap its `url` for a real instance when ready.
-MinIO is seeded (`minio-init`) with a `winnow` bucket containing sample docs
+MinIO is seeded (`minio-init`) with a `alvis` bucket containing sample docs
 and a video that should be excluded (`examples/s3-seed/`).
 
 Several pipelines run in a single command and execute concurrently; a failing
 pipeline is reported and does not stop the others:
 
 ```bash
-winnow run examples/confluence-qdrant.yaml examples/s3-qdrant.yaml --parallel 2
+alvis run examples/confluence-qdrant.yaml examples/s3-qdrant.yaml --parallel 2
 ```
 
-For a zero-touch *monitoring* demo (Qdrant + Winnow watch mode + Prometheus +
+For a zero-touch *monitoring* demo (Qdrant + Alvis watch mode + Prometheus +
 Grafana with a ready-made dashboard), see
 [`docker/observability/`](docker/observability/).
 
 ### Default pipelines folder
 
-With no paths, `winnow run` scans `winnow/pipelines/*.yaml` (plus a top-level
-`winnow.yaml`) and runs them concurrently — a project keeps its workflows as
+With no paths, `alvis run` scans `alvis/pipelines/*.yaml` (plus a top-level
+`alvis.yaml`) and runs them concurrently — a project keeps its workflows as
 plain files in one folder, ready for a mounted container or a scheduler:
 
 ```bash
-winnow/pipelines/
+alvis/pipelines/
   confluence.yaml
   s3.yaml
-winnow run                # runs both, in parallel
+alvis run                # runs both, in parallel
 ```
 
 ### Local companion plugins
 
 Plugins normally ship as installable packages. For uninstalled, in-repo code,
 point `--plugins <dir>` at a directory of `.py` files: each file is loaded and
-expected to assign a module-level `plugin` (a `winnow.plugin.Plugin`) or call
+expected to assign a module-level `plugin` (a `alvis.plugin.Plugin`) or call
 `install_plugin()` itself. This runs local code, so it is always explicit —
 never auto-scanned:
 
 ```bash
-winnow run --plugins ./plugins                 # project-local adapters
-winnow validate catalog.yaml --plugins ./plugins
-winnow plugins --plugins ./plugins             # list them
+alvis run --plugins ./plugins                 # project-local adapters
+alvis validate catalog.yaml --plugins ./plugins
+alvis plugins --plugins ./plugins             # list them
 ```
 
 ## Run as a container
 
 Since a pipeline is just YAML, a ready-made image ships the whole product: a
-`winnow` CLI with every optional extra (documents parsers, pgvector,
+`alvis` CLI with every optional extra (documents parsers, pgvector,
 observability) built in. You configure it by mounting files — never by
 rebuilding:
 
 ```bash
-docker build -t winnow:dev .
+docker build -t alvis:dev .
 docker run --rm \
   -v "$PWD/pipeline.yaml:/workspace/pipeline.yaml:ro" \
   -v "$PWD/corpus:/workspace/corpus:ro" \
-  -v "$PWD/.winnow:/workspace/.winnow" \
-  winnow:dev run --incremental pipeline.yaml
+  -v "$PWD/.alvis:/workspace/.alvis" \
+  alvis:dev run --incremental pipeline.yaml
 ```
 
-Mount a project instead and the defaults kick in: `winnow/pipelines/*.yaml` is
+Mount a project instead and the defaults kick in: `alvis/pipelines/*.yaml` is
 scanned with no args, and local adapters load with `--plugins`:
 
 ```bash
-docker run --rm -v "$PWD:/workspace" winnow:dev run --plugins ./plugins
+docker run --rm -v "$PWD:/workspace" alvis:dev run --plugins ./plugins
 ```
 
-CI builds and publishes `bzdvdn/winnow` (linux/amd64 + linux/arm64) for every
+CI builds and publishes `bzdvdn/alvis` (linux/amd64 + linux/arm64) for every
 `v*` tag with that tag plus `latest` — so on release you skip the local build
 and just pull:
 
 ```bash
-docker pull bzdvdn/winnow:v0.6.0
+docker pull bzdvdn/alvis:v0.6.0
 ```
 
-The image runs as an unprivileged `winnow` user in `/workspace`; incremental
-state lands in `.winnow/state.json` there, so the volume above is what makes
+The image runs as an unprivileged `alvis` user in `/workspace`; incremental
+state lands in `.alvis/state.json` there, so the volume above is what makes
 re-runs skip unchanged content. Point a `--watch` config at a scheduler and the
 container *is* the ingestion loop:
 
 ```bash
-docker run -d --name winnow-watcher --restart unless-stopped \
+docker run -d --name alvis-watcher --restart unless-stopped \
   -v "$PWD/pipeline.yaml:/workspace/pipeline.yaml:ro" \
   -v "$PWD/corpus:/workspace/corpus:ro" \
-  -v "$PWD/.winnow:/workspace/.winnow" \
-  winnow:dev run --watch --interval 60 pipeline.yaml
+  -v "$PWD/.alvis:/workspace/.alvis" \
+  alvis:dev run --watch --interval 60 pipeline.yaml
 ```
 
 ## Embedding
@@ -237,7 +237,7 @@ pipeline:
     type: qdrant
     config:
       url: http://localhost:6333
-      collection: winnow_docs
+      collection: alvis_docs
 ```
 
 Chunks are embedded in batches (`batch_size`) through the same
@@ -264,12 +264,12 @@ pipeline:
       model: text-embedding-3-small
       api_token_env: OPENAI_API_KEY
       cache:
-        path: .winnow/embeddings.cache
+        path: .alvis/embeddings.cache
   index:
     type: qdrant
     config:
       url: http://localhost:6333
-      collection: winnow_docs
+      collection: alvis_docs
 ```
 
 Keys are derived from the content hash **and** the model signature, so
@@ -292,7 +292,7 @@ pipeline.yaml: 12 documents, 87 chunks indexed
 
 - `qdrant` — Qdrant vector store (`url`, `collection`).
 - `pgvector` — PostgreSQL + pgvector column
-  (`dsn` / `dsn_env`, `table`, requires `pip install winnow[pgindex]`).
+  (`dsn` / `dsn_env`, `table`, requires `pip install alvis[pgindex]`).
   See `examples/pgvector.yaml` and the `postgres` service in docker-compose.
 - `memory` — in-memory store for tests and prototypes.
 
@@ -302,7 +302,7 @@ Ask questions against an already-loaded index; the query string is embedded
 with the config's embedder and searched nearest-neighbour:
 
 ```bash
-winnow query examples/pgvector.yaml --text "how do I install winnow?" --top-k 5
+alvis query examples/pgvector.yaml --text "how do I install alvis?" --top-k 5
 ```
 
 `--answer` synthesizes a cited answer over the top hits instead of just
@@ -311,22 +311,22 @@ returning chunks — works with an OpenAI-compatible endpoint
 OpenAI), and falls back to numbered excerpts when no API key is set:
 
 ```bash
-winnow query examples/pgvector.yaml --text "how do I install winnow?" --answer
+alvis query examples/pgvector.yaml --text "how do I install alvis?" --answer
 ```
 
 Programmatically (same contract as ingestion):
 
 ```python
-from winnow import query, query_async, answer, answer_async, Synthesizer
+from alvis import query, query_async, answer, answer_async, Synthesizer
 
-hits = query("examples/pgvector.yaml", "how do I install winnow?", top_k=5)
-await query_async("examples/pgvector.yaml", "how do I install winnow?")
+hits = query("examples/pgvector.yaml", "how do I install alvis?", top_k=5)
+await query_async("examples/pgvector.yaml", "how do I install alvis?")
 
 # cited answer over the hits, with an explicit LLM client
 llm = Synthesizer(base_url="https://api.openai.com/v1", model="gpt-4o-mini",
                   api_token_env="OPENAI_API_KEY")
-result = answer("examples/pgvector.yaml", "how do I install winnow?", llm=llm)
-result.text                      # "Run `pip install winnow` [1], ..."
+result = answer("examples/pgvector.yaml", "how do I install alvis?", llm=llm)
+result.text                      # "Run `pip install alvis` [1], ..."
 result.citations                 # [Citation(index=1, source_uri=..., ...)]
 ```
 
@@ -337,10 +337,10 @@ result.citations                 # [Citation(index=1, source_uri=..., ...)]
 ## Embedding in your application
 
 The pipeline is just an async API, so it slots into workers, schedulers, or
-web apps. `winnow` exposes thin sync/async entry points:
+web apps. `alvis` exposes thin sync/async entry points:
 
 ```python
-from winnow import run, run_async, run_many, run_many_async
+from alvis import run, run_async, run_many, run_many_async
 
 run("pipeline.yaml")                    # single pipeline, sync (celery/scripts)
 await run_async("pipeline.yaml")        # single pipeline, async (FastAPI, ...)
@@ -363,19 +363,19 @@ pipeline from code, so a Python pipeline validates, dry-runs, and runs
 identically to its YAML twin:
 
 ```python
-from winnow import dsl, run
+from alvis import dsl, run
 
 cfg = dsl.pipeline(
     dsl.s3(
         url="http://localhost:9000",
-        bucket="winnow",
+        bucket="alvis",
         access_key_env="MINIO_ACCESS_KEY",
         secret_key_env="MINIO_SECRET_KEY",
         prefix="docs",
         exclude_globs=["**/*.mp4"],
     ),
     chunk=dsl.chunk(max_tokens=80),
-    index=dsl.qdrant(url="http://localhost:6333", collection="winnow-s3"),
+    index=dsl.qdrant(url="http://localhost:6333", collection="alvis-s3"),
 )
 run(cfg)                              # sync, handles its own event loop
 await run_async(cfg)                  # or inside your own async app
@@ -414,7 +414,7 @@ system fields. A metadata key named `documentId` (or `document_id`) is
 promoted to `__document_id`; sources with a natural stable id declare it
 (GitLab/GitHub blob id, Confluence page id) so renames update the document in
 place instead of replacing it. Collections indexed before this contract store
-the old flat keys — drop the collection once and re-run `winnow run` to
+the old flat keys — drop the collection once and re-run `alvis run` to
 rebuild under the versioned schema.
 
 #### Incremental ingestion
@@ -424,12 +424,12 @@ Idempotency avoids duplicates; `--incremental` also avoids *work*. Run with
 chunk / embed / upsert), reporting the delta:
 
 ```text
-$ winnow run pipeline.yaml --incremental
+$ alvis run pipeline.yaml --incremental
 pipeline.yaml: 12 documents, 1 chunks indexed
   incremental: 1 changed, 11 skipped, 0 deleted
 ```
 
-State lives in `.winnow/state.json` (`--state` to relocate) and is keyed by
+State lives in `.alvis/state.json` (`--state` to relocate) and is keyed by
 source identity **and** a pipeline signature — changing extract/chunk/embed
 settings invalidates it, so chunks are never silently left stale. State is
 committed only after a successful run, and a failed run leaves the previous
@@ -437,7 +437,7 @@ state intact. Same toggle programmatically:
 
 ```python
 run("pipeline.yaml", incremental=True)                    # or state_path="..."
-await run_async(cfg, incremental=True, state_path=".winnow/state.json")
+await run_async(cfg, incremental=True, state_path=".alvis/state.json")
 ```
 
 Phase 1 skips *processing*; Phase 2 skips *downloading* too. Connectors
@@ -447,20 +447,20 @@ never fetched; the filesystem source hashes files locally. A second run of an
 unchanged 12-document source therefore does zero extraction, chunking, and
 embedding.
 
-**Change-triggered ingestion.** Point `--watch` at the configs and Winnow
+**Change-triggered ingestion.** Point `--watch` at the configs and Alvis
 polls them every `--interval` seconds, ingesting only what changed per tick —
 the polling trigger is a scheduler primitive, so a push hook or cron only has
 to invoke the (already-cheap) incremental run:
 
 ```text
-$ winnow run pipeline.yaml --watch --interval 60
+$ alvis run pipeline.yaml --watch --interval 60
 --watch implies --incremental; enabling incremental mode.
 [14:02:11] pipeline.yaml: 12 documents, 0 chunks indexed
   incremental: 0 changed, 12 skipped, 0 deleted
 ```
 
 The same loop is available programmatically as an async iterator
-(`winnow.watch_async(configs, interval=..., state_path=...)`) — each yielded
+(`alvis.watch_async(configs, interval=..., state_path=...)`) — each yielded
 tick is the per-config `PipelineResult`s, failures included, so a transient
 source outage doesn't kill the watcher.
 
@@ -477,7 +477,7 @@ the latter only against trusted internal endpoints).
 - [Contributing](CONTRIBUTING.md) — how to write a connector (cover page: connector fixture + golden tests)
 - [Plugin registry](docs/plugins.md) — built-in and community plugins (v1.1 SDK)
 - [Observability](docs/observability.md) — structured logging, metrics, tracing, Prometheus export
-- [Operations](docs/status.md) — `winnow status`, metrics endpoint, `.env` loading, `init` templates, dashboards
+- [Operations](docs/status.md) — `alvis status`, metrics endpoint, `.env` loading, `init` templates, dashboards
 - [Versioning & deprecation](docs/versioning.md) — semver, stable surface, deprecation window
 - [Python DSL guide](docs/dsl.md) — describing pipelines from code
 - [Constitution](CONSTITUTION.md) — purpose, scope, open-source strategy

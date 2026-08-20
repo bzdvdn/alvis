@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from winnow.cli import app
-from winnow.plugin import reset_registry
+from alvis.cli import app
+from alvis.plugin import reset_registry
 
 runner = CliRunner()
 
@@ -21,7 +21,7 @@ def _isolated_registry() -> None:
 def test_version() -> None:
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert result.output.strip() == "winnow 0.6.0"
+    assert result.output.strip() == "alvis 0.6.0"
 
 
 def test_validate_ok(tmp_path: Path) -> None:
@@ -56,12 +56,12 @@ def test_init_creates_config(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["init"])
     assert result.exit_code == 0
-    assert (tmp_path / "winnow.yaml").exists()
+    assert (tmp_path / "alvis.yaml").exists()
 
 
 def test_init_refuses_overwrite(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
-    target = tmp_path / "winnow.yaml"
+    target = tmp_path / "alvis.yaml"
     target.write_text("keep me\n", encoding="utf-8")
     result = runner.invoke(app, ["init"])
     assert result.exit_code == 1
@@ -118,7 +118,7 @@ def test_validate_report_shows_stages_and_graph(tmp_path: Path) -> None:
         "  index:\n"
         "    type: qdrant\n"
         "    config:\n"
-        "      collection: winnow_docs\n",
+        "      collection: alvis_docs\n",
         encoding="utf-8",
     )
     result = runner.invoke(app, ["validate", str(config)])
@@ -191,7 +191,7 @@ def test_run_without_configs_scans_workflow_dir(tmp_path: Path, monkeypatch) -> 
     corpus = tmp_path / "corpus"
     corpus.mkdir()
     (corpus / "a.md").write_text("# A\n\nbody\n", encoding="utf-8")
-    pipelines = tmp_path / "winnow" / "pipelines"
+    pipelines = tmp_path / "alvis" / "pipelines"
     pipelines.mkdir(parents=True)
     (pipelines / "one.yaml").write_text(_fs_pipeline(corpus), encoding="utf-8")
     (pipelines / "two.yaml").write_text(_fs_pipeline(corpus), encoding="utf-8")
@@ -199,34 +199,34 @@ def test_run_without_configs_scans_workflow_dir(tmp_path: Path, monkeypatch) -> 
 
     result = runner.invoke(app, ["run"])
     assert result.exit_code == 0
-    assert "winnow/pipelines/one.yaml: 1 documents" in result.output
-    assert "winnow/pipelines/two.yaml: 1 documents" in result.output
+    assert "alvis/pipelines/one.yaml: 1 documents" in result.output
+    assert "alvis/pipelines/two.yaml: 1 documents" in result.output
 
 
-def test_run_without_configs_prefers_winnow_yaml(tmp_path: Path, monkeypatch) -> None:
+def test_run_without_configs_prefers_alvis_yaml(tmp_path: Path, monkeypatch) -> None:
     corpus = tmp_path / "corpus"
     corpus.mkdir()
     (corpus / "a.md").write_text("# A\n\nbody\n", encoding="utf-8")
-    (tmp_path / "winnow.yaml").write_text(_fs_pipeline(corpus), encoding="utf-8")
+    (tmp_path / "alvis.yaml").write_text(_fs_pipeline(corpus), encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
     result = runner.invoke(app, ["run"])
     assert result.exit_code == 0
-    assert "winnow.yaml: 1 documents" in result.output
+    assert "alvis.yaml: 1 documents" in result.output
 
 
 def test_run_without_configs_errors_when_nothing_found(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["run"])
     assert result.exit_code == 2
-    assert "winnow init" in result.output
+    assert "alvis init" in result.output
 
 
 def test_validate_accepts_plugin_type_from_local_dir(tmp_path: Path, monkeypatch) -> None:
     plugins = tmp_path / "plugins"
     plugins.mkdir()
     (plugins / "svc_demo.py").write_text(
-        "from winnow.plugin import Plugin\n\n"
+        "from alvis.plugin import Plugin\n\n"
         "def _svc(*, config, max_bytes=None):\n"
         "    raise NotImplementedError\n\n"
         'plugin = Plugin(name="svc", version="1.0.0", '
@@ -254,7 +254,7 @@ def test_init_writes_selected_source_and_index(tmp_path: Path, monkeypatch) -> N
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["init", "--source", "fs", "--index", "pgvector"])
     assert result.exit_code == 0
-    target = tmp_path / "winnow.yaml"
+    target = tmp_path / "alvis.yaml"
     assert target.exists()
     text = target.read_text(encoding="utf-8")
     assert "type: fs" in text
@@ -355,7 +355,7 @@ def test_status_reports_invalid_config(tmp_path: Path) -> None:
 def test_metrics_serves_prometheus_and_404(tmp_path: Path) -> None:
     import urllib.request
 
-    from winnow.cli import _start_metrics_server
+    from alvis.cli import _start_metrics_server
 
     server = _start_metrics_server("127.0.0.1", 0)
     assert server is not None
@@ -417,7 +417,7 @@ def test_plugins_lists_local_plugins(tmp_path: Path, monkeypatch) -> None:
     plugins = tmp_path / "plugins"
     plugins.mkdir()
     (plugins / "svc_demo.py").write_text(
-        "from winnow.plugin import Plugin\n\n"
+        "from alvis.plugin import Plugin\n\n"
         "def _svc(*, config, max_bytes=None):\n"
         "    raise NotImplementedError\n\n"
         'plugin = Plugin(name="svc", version="1.0.0", '
@@ -453,7 +453,7 @@ def test_run_watch_implies_incremental(tmp_path: Path, monkeypatch) -> None:
     config.write_text(_fs_pipeline(corpus), encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    import winnow.cli as cli
+    import alvis.cli as cli
 
     def _interrupt(*_args, **_kwargs):
         raise KeyboardInterrupt
@@ -487,7 +487,7 @@ def test_status_text_render_shows_run(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_status_probe_unreachable_index(tmp_path: Path, monkeypatch) -> None:
-    import winnow.cli as cli
+    import alvis.cli as cli
 
     corpus = tmp_path / "corpus"
     corpus.mkdir()

@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from winnow.deprecated import deprecated, is_deprecated, removed_in
+from alvis.deprecated import deprecated, is_deprecated, removed_in
 
 
 def test_deprecated_emits_warning_with_removal_version() -> None:
-    @deprecated("use winnow.load_pipeline instead", remove_in="1.0.0")
+    @deprecated("use alvis.load_pipeline instead", remove_in="1.0.0")
     def answer() -> int:
         return 42
 
@@ -16,7 +16,7 @@ def test_deprecated_emits_warning_with_removal_version() -> None:
         assert answer() == 42
     assert "answer" in str(captured.list[0].message)
     assert "1.0.0" in str(captured.list[0].message)
-    assert "use winnow.load_pipeline instead" in str(captured.list[0].message)
+    assert "use alvis.load_pipeline instead" in str(captured.list[0].message)
 
 
 def test_deprecated_keeps_metadata() -> None:

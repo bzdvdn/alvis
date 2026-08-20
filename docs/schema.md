@@ -4,7 +4,7 @@ Two public contracts are versioned, and both freeze at **v1**:
 
 - **YAML pipeline schema** (`pipeline.schema_version`, default `1`).
 - **Canonical Content Tree** (`Document.schema_version`, constant
-  `winnow.core.models.CCT_SCHEMA_VERSION`, currently `1`).
+  `alvis.core.models.CCT_SCHEMA_VERSION`, currently `1`).
 
 Both live in `docs/`. They are RFC-first contracts: any change to the YAML
 schema or the Canonical Content Tree requires an RFC (see CONSTITUTION.md),

@@ -1,6 +1,6 @@
-# Winnow Overview
+# Alvis Overview
 
-Winnow is a no-code knowledge ingestion engine.
+Alvis is a no-code knowledge ingestion engine.
 
 ## Sources
 

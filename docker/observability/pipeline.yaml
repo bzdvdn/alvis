@@ -1,6 +1,6 @@
 # FS source → Qdrant, for the docker/observability quickstart. The corpus is
-# bind-mounted read-only at /corpus and the ledger lives on the winnow_state
-# volume (default .winnow/state.json under /workspace).
+# bind-mounted read-only at /corpus and the ledger lives on the alvis_state
+# volume (default .alvis/state.json under /workspace).
 pipeline:
   source:
     type: fs
@@ -23,4 +23,4 @@ pipeline:
     type: qdrant
     config:
       url: http://qdrant:6333
-      collection: winnow_demo
+      collection: alvis_demo

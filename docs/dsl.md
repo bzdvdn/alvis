@@ -1,24 +1,24 @@
 # Describing pipelines in Python
 
-YAML is Winnow's no-code interface; pipelines described in Python use the
-same config objects (`winnow.config.models.PipelineConfig`), so they
+YAML is Alvis's no-code interface; pipelines described in Python use the
+same config objects (`alvis.config.models.PipelineConfig`), so they
 validate, dry-run, and run identically to their YAML twins.
 
 ## Assembling a pipeline
 
 ```python
-from winnow import dsl, describe, run
+from alvis import dsl, describe, run
 
 config = dsl.pipeline(
     dsl.s3(
         url="http://localhost:9000",
-        bucket="winnow",
+        bucket="alvis",
         access_key_env="MINIO_ACCESS_KEY",
         secret_key_env="MINIO_SECRET_KEY",
         exclude_globs=["**/*.mp4"],
     ),
     chunk=dsl.chunk(max_tokens=80),
-    index=dsl.qdrant(url="http://localhost:6333", collection="winnow-s3"),
+    index=dsl.qdrant(url="http://localhost:6333", collection="alvis-s3"),
 )
 
 print(describe(config))          # dry-run summary
@@ -38,7 +38,7 @@ run(config)                      # sync run (own event loop)
 | `dsl.chunk(max_tokens, overlap, strategy)` | `auto`  | auto/sections/size chunking |
 | `dsl.embed_openai(...)` | `openai`        | OpenAI-compatible embedder API            |
 | `dsl.qdrant(url, collection)` | `qdrant`  | Qdrant index                              |
-| `dsl.pgvector(dsn, dsn_env, table)` | `pgvector` | PostgreSQL + pgvector index (`winnow[pgindex]`) |
+| `dsl.pgvector(dsn, dsn_env, table)` | `pgvector` | PostgreSQL + pgvector index (`alvis[pgindex]`) |
 | `dsl.memory()`          | `memory`        | in-memory index (tests)                   |
 
 Source builders accept the same keys as the YAML `config` blocks; defaults
@@ -62,7 +62,7 @@ parameters with docstrings.
 chunks are not re-embedded on later runs:
 
 - `cache=True` — in-memory (per-process, dedups within a run).
-- `cache={"path": ".winnow/embeddings.cache"}` — on-disk, survives restarts.
+- `cache={"path": ".alvis/embeddings.cache"}` — on-disk, survives restarts.
 - omitted/`False` — no cache (default).
 
 ```python
@@ -71,9 +71,9 @@ cfg = dsl.pipeline(
     embed=dsl.embed_openai(
         base_url="https://api.openai.com/v1",
         model="text-embedding-3-small",
-        cache={"path": ".winnow/embeddings.cache"},
+        cache={"path": ".alvis/embeddings.cache"},
     ),
-    index=dsl.qdrant(url="http://localhost:6333", collection="winnow_docs"),
+    index=dsl.qdrant(url="http://localhost:6333", collection="alvis_docs"),
 )
 ```
 

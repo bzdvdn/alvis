@@ -13,8 +13,8 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from winnow.sources import ConfluenceSource, GitHubSource, GitLabSource, S3Source
-from winnow.testing import MockServer
+from alvis.sources import ConfluenceSource, GitHubSource, GitLabSource, S3Source
+from alvis.testing import MockServer
 
 _S3_NS = "{http://s3.amazonaws.com/doc/2006-03-01/}"
 

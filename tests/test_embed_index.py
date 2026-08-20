@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from winnow.core.models import Chunk
-from winnow.embed import HashEmbedder
-from winnow.index import MemoryIndex
+from alvis.core.models import Chunk
+from alvis.embed import HashEmbedder
+from alvis.index import MemoryIndex
 
 
 async def test_embedder_deterministic_normalized() -> None:
     embedder = HashEmbedder(dimensions=64)
-    chunk = Chunk(text="winnow ingestion engine", source_uri="u")
+    chunk = Chunk(text="alvis ingestion engine", source_uri="u")
     v1 = await embedder.embed(chunk)
     v2 = await embedder.embed(chunk)
     assert v1 == v2

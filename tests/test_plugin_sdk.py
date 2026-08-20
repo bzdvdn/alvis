@@ -14,11 +14,11 @@ from pathlib import Path
 
 import pytest
 
-from winnow import dsl, run_async
-from winnow.config.models import SourceConfig
-from winnow.factories import build_source
-from winnow.index import MemoryIndex
-from winnow.plugin import (
+from alvis import dsl, run_async
+from alvis.config.models import SourceConfig
+from alvis.factories import build_source
+from alvis.index import MemoryIndex
+from alvis.plugin import (
     KINDS,
     Plugin,
     PluginRegistry,
@@ -27,7 +27,7 @@ from winnow.plugin import (
     registry,
     reset_registry,
 )
-from winnow.registry import check_pipeline_supported
+from alvis.registry import check_pipeline_supported
 
 _EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "kb-plugin"
 
@@ -92,7 +92,7 @@ async def test_plugin_source_runs_pipeline(tmp_path: Path) -> None:
 
 def test_discovery_loads_plugins_from_entry_points() -> None:
     sys.path.insert(0, str(_EXAMPLE))
-    ep = EntryPoint(name="kb-catalog", value="kb_plugin:plugin", group="winnow.plugins")
+    ep = EntryPoint(name="kb-catalog", value="kb_plugin:plugin", group="alvis.plugins")
 
     reg = PluginRegistry()
     assert reg.known_types("source") == set()
@@ -104,7 +104,7 @@ def test_discovery_loads_plugins_from_entry_points() -> None:
 
 
 def test_discovery_skips_broken_entry_points(recwarn: pytest.WarningsRecorder) -> None:
-    broken = EntryPoint(name="broken", value="no_such_module_xyz:plugin", group="winnow.plugins")
+    broken = EntryPoint(name="broken", value="no_such_module_xyz:plugin", group="alvis.plugins")
     reg = PluginRegistry()
     assert reg.discover(entry_points=lambda group: [broken]) == []
     assert len(recwarn) == 1
@@ -124,7 +124,7 @@ def test_discovery_uses_the_process_registry_reset_clean() -> None:
 def _write_local_plugin(directory: Path, name: str, source_type: str) -> Path:
     module = directory / f"{name}.py"
     module.write_text(
-        "from winnow.plugin import Plugin\n"
+        "from alvis.plugin import Plugin\n"
         "\n"
         f"def _svc(*, config, max_bytes=None):\n"
         "    raise NotImplementedError\n"
@@ -159,7 +159,7 @@ def test_load_local_plugins_skips_broken_and_underscore_files(
 
 def test_load_local_plugins_accepts_install_plugin_convention(tmp_path: Path) -> None:
     (tmp_path / "explicit.py").write_text(
-        "from winnow.plugin import Plugin, install_plugin, registry\n"
+        "from alvis.plugin import Plugin, install_plugin, registry\n"
         "\n"
         "def _svc(*, config, max_bytes=None):\n"
         "    raise NotImplementedError\n"

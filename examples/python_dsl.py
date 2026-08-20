@@ -11,18 +11,18 @@ Requires the docker-compose stack (MinIO on :9000, Qdrant on :6333):
     export MINIO_SECRET_KEY=minioadmin
 """
 
-from winnow import describe, dsl, run
+from alvis import describe, dsl, run
 
 config = dsl.pipeline(
     dsl.s3(
         url="http://localhost:9000",
-        bucket="winnow",
+        bucket="alvis",
         access_key_env="MINIO_ACCESS_KEY",
         secret_key_env="MINIO_SECRET_KEY",
         exclude_globs=["**/*.mp4"],
     ),
     chunk=dsl.chunk(max_tokens=80),
-    index=dsl.qdrant(url="http://localhost:6333", collection="winnow-s3"),
+    index=dsl.qdrant(url="http://localhost:6333", collection="alvis-s3"),
 )
 
 print(describe(config))

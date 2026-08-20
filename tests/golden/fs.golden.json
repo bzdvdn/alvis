@@ -11,7 +11,7 @@
   },
   {
     "content_type": "text/markdown",
-    "data": "# Onboarding Guide\n\nWinnow ingests documents from many sources and turns them into a searchable\ncorpus.\n\n## First run\n\nWrite a pipeline file, then run `winnow run pipeline.yaml`.\n\n## Health check\n\n`winnow validate pipeline.yaml` checks the config before running.\n",
+    "data": "# Onboarding Guide\n\nAlvis ingests documents from many sources and turns them into a searchable\ncorpus.\n\n## First run\n\nWrite a pipeline file, then run `alvis run pipeline.yaml`.\n\n## Health check\n\n`alvis validate pipeline.yaml` checks the config before running.\n",
     "metadata": {
       "path": "<root>/guide.md",
       "title": "guide"

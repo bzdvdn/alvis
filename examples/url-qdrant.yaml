@@ -26,4 +26,4 @@ pipeline:
     type: qdrant
     config:
       url: http://localhost:6333
-      collection: winnow_docs
+      collection: alvis_docs

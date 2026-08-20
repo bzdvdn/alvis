@@ -1,15 +1,15 @@
-# Zero-touch observability stack for Winnow ingestion flows.
+# Zero-touch observability stack for Alvis ingestion flows.
 #
 #   cd docker/observability
 #   docker compose up -d --build
 #
 #   Qdrant    http://localhost:6333 (dashboard)
-#   Winnow    ingests examples/documents into the `winnow_demo` collection,
+#   Alvis    ingests examples/documents into the `alvis_demo` collection,
 #             re-polling every 60s, exposing /metrics on :8000
 #   Prometheus http://localhost:9090
-#   Grafana   http://localhost:3000  (admin / admin) — dashboard "Winnow"
+#   Grafana   http://localhost:3000  (admin / admin) — dashboard "Alvis"
 
-name: winnow-observability
+name: alvis-observability
 
 services:
   qdrant:
@@ -17,18 +17,18 @@ services:
     ports:
       - "6333:6333"
 
-  winnow:
+  alvis:
     build:
       context: ../..
     command: run /quickstart/pipeline.yaml --watch --interval 60 --incremental --metrics-host 0.0.0.0 --metrics-port 8000
     volumes:
       - ./pipeline.yaml:/quickstart/pipeline.yaml:ro
       - ../../examples/documents:/corpus:ro
-      - winnow_state:/workspace/.winnow
+      - alvis_state:/workspace/.alvis
     depends_on:
       - qdrant
     healthcheck:
-      test: ["CMD", "winnow", "status", "/quickstart/pipeline.yaml", "--probe"]
+      test: ["CMD", "alvis", "status", "/quickstart/pipeline.yaml", "--probe"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -54,4 +54,4 @@ services:
       - prometheus
 
 volumes:
-  winnow_state:
+  alvis_state:

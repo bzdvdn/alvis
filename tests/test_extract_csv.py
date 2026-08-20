@@ -6,8 +6,8 @@ text; pure-numeric rows and single-column files are data (joined with ``|``).
 
 from __future__ import annotations
 
-from winnow.core.models import Artifact
-from winnow.extract import AutoExtractor, CsvExtractor
+from alvis.core.models import Artifact
+from alvis.extract import AutoExtractor, CsvExtractor
 
 
 def _artifact(data: str, content_type: str = "text/csv") -> Artifact:
@@ -58,6 +58,6 @@ async def test_auto_extractor_dispatches_csv() -> None:
 
 
 async def test_content_type_maps_csv() -> None:
-    from winnow.sources.content_types import content_type
+    from alvis.sources.content_types import content_type
 
     assert content_type("a.csv") == "text/csv"

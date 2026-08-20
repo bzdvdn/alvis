@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from winnow.config import load_config
-from winnow.config.loader import ConfigError
+from alvis.config import load_config
+from alvis.config.loader import ConfigError
 
 VALID_PIPELINE = """\
 pipeline:
@@ -111,8 +111,8 @@ def test_unsupported_schema_version_rejected(tmp_path: Path) -> None:
 
 
 def test_cct_schema_version_on_document() -> None:
-    from winnow.config.models import PIPELINE_SCHEMA_VERSION
-    from winnow.core.models import CCT_SCHEMA_VERSION, Document
+    from alvis.config.models import PIPELINE_SCHEMA_VERSION
+    from alvis.core.models import CCT_SCHEMA_VERSION, Document
 
     assert PIPELINE_SCHEMA_VERSION == 1
     assert CCT_SCHEMA_VERSION == 1
@@ -143,11 +143,11 @@ def test_embed_cache_bool_and_path(tmp_path: Path) -> None:
             "pipeline:\n"
             "  source:\n    type: confluence\n"
             "  embed:\n    type: openai\n"
-            "    config:\n      model: m\n      cache:\n        path: .winnow/cache\n",
+            "    config:\n      model: m\n      cache:\n        path: .alvis/cache\n",
         )
     )
     assert cfg.embed.cache_enabled is True
-    assert cfg.embed.cache_path == ".winnow/cache"
+    assert cfg.embed.cache_path == ".alvis/cache"
 
 
 def test_embed_cache_disabled_by_default_and_explicit_false(tmp_path: Path) -> None:

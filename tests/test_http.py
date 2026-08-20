@@ -3,8 +3,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from winnow.sources.base import SourceError
-from winnow.sources.http import HttpClient
+from alvis.sources.base import SourceError
+from alvis.sources.http import HttpClient
 
 
 def _client(*, retries: int = 3, retry_backoff: float = 0.0, handler=None) -> HttpClient:
@@ -100,8 +100,8 @@ async def test_verify_passthrough_does_not_break_requests() -> None:
 
 
 async def test_factory_config_passes_retries_and_verify() -> None:
-    from winnow.config.models import SourceConfig
-    from winnow.factories import build_source
+    from alvis.config.models import SourceConfig
+    from alvis.factories import build_source
 
     source = build_source(
         SourceConfig(

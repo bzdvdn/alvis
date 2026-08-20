@@ -3,14 +3,14 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "winnow"
+name = "alvis"
 version = "0.6.0"
 description = "No-code framework for building corporate knowledge bases from heterogeneous sources"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-authors = [{ name = "Winnow contributors" }]
+authors = [{ name = "Alvis contributors" }]
 keywords = ["rag", "ingestion", "knowledge-base", "etl", "search"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -60,14 +60,14 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/winnow/winnow"
-Documentation = "https://github.com/winnow/winnow#readme"
+Homepage = "https://github.com/bzdvdn/alvis"
+Documentation = "https://github.com/bzdvdn/alvis#readme"
 
 [project.scripts]
-winnow = "winnow.cli:app"
+alvis = "alvis.cli:app"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/winnow"]
+packages = ["src/alvis"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,14 +1,14 @@
 """A "catalog" source — the worked example for the Plugin SDK (v1.1).
 
 This is a standalone, installable extension package: it needs no changes to
-Winnow's core. Installing it makes ``source.type: catalog`` available to any
-pipeline, and ``winnow plugins`` lists it once discovered.
+Alvis's core. Installing it makes ``source.type: catalog`` available to any
+pipeline, and ``alvis plugins`` lists it once discovered.
 
 Run from this directory::
 
     pip install -e .
-    winnow plugins                    # -> kb-catalog 0.1.0
-    winnow validate catalog.yaml
+    alvis plugins                    # -> kb-catalog 0.1.0
+    alvis validate catalog.yaml
 
 The source ingests every ``.txt`` file under ``path``, tagging chunks with a
 ``catalog`` metadata key so downstream apps can filter on it.
@@ -19,10 +19,10 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from winnow.core.models import Artifact, DocumentMeta
-from winnow.plugin import Plugin
-from winnow.sources.base import SourceError
-from winnow.sources.content_types import content_type
+from alvis.core.models import Artifact, DocumentMeta
+from alvis.plugin import Plugin
+from alvis.sources.base import SourceError
+from alvis.sources.content_types import content_type
 
 
 class CatalogSource:

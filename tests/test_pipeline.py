@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from winnow.errors import PipelineError
-from winnow.pipeline.engine import PipelineEngine
-from winnow.sources import FilesystemSource, SourceError
+from alvis.errors import PipelineError
+from alvis.pipeline.engine import PipelineEngine
+from alvis.sources import FilesystemSource, SourceError
 
 
 async def test_pipeline_end_to_end(tmp_path: Path) -> None:
@@ -111,7 +111,7 @@ async def test_engine_describe_graph(tmp_path: Path) -> None:
         "  index:\n"
         "    type: qdrant\n"
         "    config:\n"
-        "      collection: winnow_docs\n",
+        "      collection: alvis_docs\n",
         encoding="utf-8",
     )
     engine = PipelineEngine.from_yaml(config)

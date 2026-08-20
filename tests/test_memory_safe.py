@@ -5,10 +5,10 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from winnow.sources.base import SourceError
-from winnow.sources.fs import FilesystemSource
-from winnow.sources.gitlab import GitLabSource
-from winnow.sources.http import HttpClient
+from alvis.sources.base import SourceError
+from alvis.sources.fs import FilesystemSource
+from alvis.sources.gitlab import GitLabSource
+from alvis.sources.http import HttpClient
 
 
 async def test_http_client_streams_with_cap_and_aborts_on_overflow() -> None:
@@ -80,7 +80,7 @@ async def test_gitlab_source_skips_oversized_blob() -> None:
 
 
 def test_extract_config_validates_max_bytes() -> None:
-    from winnow.config.models import ExtractConfig
+    from alvis.config.models import ExtractConfig
 
     assert ExtractConfig(strategy="auto").max_bytes is None
     assert ExtractConfig(strategy="auto", config={"max_bytes": 1024}).max_bytes == 1024
@@ -89,7 +89,7 @@ def test_extract_config_validates_max_bytes() -> None:
 
 
 async def test_pipeline_skips_oversized_artifact(tmp_path) -> None:
-    from winnow.pipeline.runner import run_async
+    from alvis.pipeline.runner import run_async
 
     docs = tmp_path / "docs"
     docs.mkdir()

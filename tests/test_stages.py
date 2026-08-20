@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from winnow import dsl
-from winnow.observability import Metrics, configure_observability, reset_observability
-from winnow.pipeline.engine import PipelineEngine
-from winnow.pipeline.stages import (
+from alvis import dsl
+from alvis.observability import Metrics, configure_observability, reset_observability
+from alvis.pipeline.engine import PipelineEngine
+from alvis.pipeline.stages import (
     STAGES,
     CommitStage,
     EmbedStage,

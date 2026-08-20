@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from winnow.core.models import Chunk
-from winnow.embed import (
+from alvis.core.models import Chunk
+from alvis.embed import (
     ApiEmbedder,
     CachingEmbedder,
     FileEmbeddingCache,
     InMemoryEmbeddingCache,
     cache_key,
 )
-from winnow.factories import build_embedder
+from alvis.factories import build_embedder
 
 
 class FakeEmbedder:
@@ -107,27 +107,27 @@ async def test_caching_embedder_file_cache_reuses(tmp_path: Path) -> None:
 
 
 def test_build_embedder_wraps_and_strips_cache() -> None:
-    from winnow.config.models import EmbedConfig
+    from alvis.config.models import EmbedConfig
 
     config = EmbedConfig(
         type="openai",
         config={
             "base_url": "http://embeddings.local/v1",
             "model": "text-embedding-3-small",
-            "cache": {"path": "/tmp/winnow-embeddings.cache"},
+            "cache": {"path": "/tmp/alvis-embeddings.cache"},
         },
     )
     embedder = build_embedder(config)
     assert isinstance(embedder, CachingEmbedder)
     assert isinstance(embedder.delegate, ApiEmbedder)
-    assert embedder.cache.path == "/tmp/winnow-embeddings.cache"
+    assert embedder.cache.path == "/tmp/alvis-embeddings.cache"
 
     plain = build_embedder(config, enable_cache=False)
     assert isinstance(plain, ApiEmbedder)
 
 
 def test_build_embedder_in_memory_cache() -> None:
-    from winnow.config.models import EmbedConfig
+    from alvis.config.models import EmbedConfig
 
     config = EmbedConfig(type="default", config={"cache": True})
     embedder = build_embedder(config)

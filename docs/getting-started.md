@@ -16,9 +16,9 @@ Needs Python ≥ 3.10.
 Scaffold a config, validate it, then run it:
 
 ```bash
-winnow init                # writes winnow.yaml
-winnow validate winnow.yaml
-winnow run examples/hello-pipeline.yaml   # zero-dependency hello world
+alvis init                # writes alvis.yaml
+alvis validate alvis.yaml
+alvis run examples/hello-pipeline.yaml   # zero-dependency hello world
 ```
 
 The YAML grammar is one pipeline with one source and up to five stages:
@@ -36,8 +36,8 @@ pipeline:
 `fs → memory` needs nothing else. For retrieval after ingestion:
 
 ```bash
-winnow run winnow.yaml
-winnow query winnow.yaml --text "your question" --top-k 5
+alvis run alvis.yaml
+alvis query alvis.yaml --text "your question" --top-k 5
 ```
 
 ## A real-source example: GitLab → Qdrant

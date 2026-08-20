@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from winnow.core.models import Artifact
-from winnow.extract import AutoExtractor, JsonExtractor
+from alvis.core.models import Artifact
+from alvis.extract import AutoExtractor, JsonExtractor
 
 
 def _artifact(data: bytes, content_type: str = "application/json") -> Artifact:
@@ -80,6 +80,6 @@ async def test_auto_extractor_dispatches_json() -> None:
 
 
 async def test_content_type_maps_json() -> None:
-    from winnow.sources.content_types import content_type
+    from alvis.sources.content_types import content_type
 
     assert content_type("a.json") == "application/json"

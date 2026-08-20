@@ -10,9 +10,9 @@ from typing import Any
 
 import pytest
 
-from winnow.core.ids import point_id
-from winnow.core.models import Chunk
-from winnow.index import PgVectorIndex
+from alvis.core.ids import point_id
+from alvis.core.models import Chunk
+from alvis.index import PgVectorIndex
 
 
 class _Conn:
@@ -55,13 +55,13 @@ def test_pgvector_rejects_missing_env() -> None:
 
 
 def test_pgvector_dsn_env_wins(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("TEST_WINNOW_DSN", "postgresql://u@h/db")
-    assert PgVectorIndex(dsn_env="TEST_WINNOW_DSN").dsn == "postgresql://u@h/db"
+    monkeypatch.setenv("TEST_ALVIS_DSN", "postgresql://u@h/db")
+    assert PgVectorIndex(dsn_env="TEST_ALVIS_DSN").dsn == "postgresql://u@h/db"
 
 
 def test_pgvector_rejects_both_dsn_and_env() -> None:
     with pytest.raises(ValueError, match="either dsn or dsn_env"):
-        PgVectorIndex(dsn="x", dsn_env="TEST_WINNOW_DSN")
+        PgVectorIndex(dsn="x", dsn_env="TEST_ALVIS_DSN")
 
 
 def test_pgvector_upsert_constructs_idempotent_insert() -> None:

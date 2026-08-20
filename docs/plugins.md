@@ -1,8 +1,8 @@
 # Plugin registry
 
-Winnow adapters are pluggable (v1.1 Plugin SDK). Plugins are installed Python
-packages that register under the `winnow.plugins` entry-point group; `winnow
-plugins` lists what discovery found, and `winnow validate`/`run` accept their
+Alvis adapters are pluggable (v1.1 Plugin SDK). Plugins are installed Python
+packages that register under the `alvis.plugins` entry-point group; `alvis
+plugins` lists what discovery found, and `alvis validate`/`run` accept their
 type strings without core changes. See [CONTRIBUTING](../CONTRIBUTING.md) for
 the plugin contract and [examples/kb-plugin](../examples/kb-plugin) for a
 reference implementation.
@@ -16,7 +16,7 @@ assigns a module-level `plugin: Plugin` or calls `install_plugin()` itself:
 
 ```python
 # plugins/svc_demo.py  — one file, one plugin
-from winnow.plugin import Plugin
+from alvis.plugin import Plugin
 
 def _svc(*, config, max_bytes=None) -> object:
     ...
@@ -29,9 +29,9 @@ plugin = Plugin(
 ```
 
 ```bash
-winnow validate catalog.yaml --plugins ./plugins
-winnow run --plugins ./plugins
-winnow plugins --plugins ./plugins          # lists it too
+alvis validate catalog.yaml --plugins ./plugins
+alvis run --plugins ./plugins
+alvis plugins --plugins ./plugins          # lists it too
 ```
 
 Conventions and guarantees:
@@ -42,7 +42,7 @@ Conventions and guarantees:
 - Each `(directory, file)` pair is loaded once per process.
 - This executes your local code, so it is opt-in by flag and never implicit.
 
-## Built-in adapters (shipped with Winnow)
+## Built-in adapters (shipped with Alvis)
 
 | kind      | type                        | notes                                    |
 | --------- | --------------------------- | ---------------------------------------- |

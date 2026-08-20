@@ -5,37 +5,37 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from winnow.config import PipelineConfig
-from winnow.env import load_dotenv, missing_env
+from alvis.config import PipelineConfig
+from alvis.env import load_dotenv, missing_env
 
 
 def test_load_dotenv_parses_pairs(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.delenv("WINNOW_TEST_KEY", raising=False)
+    monkeypatch.delenv("ALVIS_TEST_KEY", raising=False)
     env_file = tmp_path / ".env"
     env_file.write_text(
         '# comment\n'
-        'WINNOW_TEST_KEY="hello world"\n'
-        'WINNOW_EMPTY=\n'
-        'WINNOW_NOPE_NOT_A_PAIR\n'
+        'ALVIS_TEST_KEY="hello world"\n'
+        'ALVIS_EMPTY=\n'
+        'ALVIS_NOPE_NOT_A_PAIR\n'
         '  \n',
         encoding="utf-8",
     )
     loaded = load_dotenv(env_file)
-    assert loaded == {"WINNOW_TEST_KEY": "hello world", "WINNOW_EMPTY": ""}
-    assert os.environ["WINNOW_TEST_KEY"] == "hello world"
+    assert loaded == {"ALVIS_TEST_KEY": "hello world", "ALVIS_EMPTY": ""}
+    assert os.environ["ALVIS_TEST_KEY"] == "hello world"
 
 
 def test_load_dotenv_does_not_overwrite(monkeypatch) -> None:
-    monkeypatch.setenv("WINNOW_KEEP", "existing")
+    monkeypatch.setenv("ALVIS_KEEP", "existing")
     env_file = Path("does-not-matter")
     monkeypatch.setattr(Path, "is_file", lambda self: True)
     monkeypatch.setattr(
         Path,
         "read_text",
-        lambda self, encoding="utf-8": "WINNOW_KEEP=new\n",
+        lambda self, encoding="utf-8": "ALVIS_KEEP=new\n",
     )
     assert load_dotenv(env_file) == {}
-    assert os.environ["WINNOW_KEEP"] == "existing"
+    assert os.environ["ALVIS_KEEP"] == "existing"
 
 
 def test_load_dotenv_missing_file_returns_empty(tmp_path: Path) -> None:

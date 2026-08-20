@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from winnow.config import load_config
-from winnow.index import MemoryIndex
-from winnow.pipeline.engine import PipelineEngine
+from alvis.config import load_config
+from alvis.index import MemoryIndex
+from alvis.pipeline.engine import PipelineEngine
 
 _ORIGINAL = "# Guide\n\nIntroduction here.\n\n## Part 1\n\nBody of part one.\n"
 _CHANGED = "# Guide\n\nIntroduction here.\n\n## Part 1\n\nCompletely new body.\n"

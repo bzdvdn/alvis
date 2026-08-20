@@ -1,6 +1,6 @@
-# Contributing to Winnow
+# Contributing to Alvis
 
-Thanks for contributing. Winnow is a no-code knowledge ingestion engine, and
+Thanks for contributing. Alvis is a no-code knowledge ingestion engine, and
 most of its value is in breadth: the more sources, formats, and stores it
 speaks, the more useful it is. This guide is the cover page for **how to write
 a connector** — the single most common contribution.
@@ -16,7 +16,7 @@ rules live there and in [ROADMAP.md](ROADMAP.md).
 python -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 .venv/bin/ruff check src tests
-.venv/bin/mypy src/winnow
+.venv/bin/mypy src/alvis
 .venv/bin/python -m pytest
 ```
 
@@ -30,37 +30,37 @@ python -m venv .venv
 
 ## How to write a connector
 
-A connector turns a source of documents into Winnow `Artifact`s so the rest of
-the pipeline (extract → chunk → embed → index) can process them. Winnow never
+A connector turns a source of documents into Alvis `Artifact`s so the rest of
+the pipeline (extract → chunk → embed → index) can process them. Alvis never
 reads the raw bytes of a source itself — it always goes through a connector's
 `fetch()`.
 
 ### 1. The contract
 
-`src/winnow/sources/base.py` defines the interface:
+`src/alvis/sources/base.py` defines the interface:
 
 ```python
 class Source(Protocol):
     async def fetch(self) -> list[Artifact]: ...
 ```
 
-`Artifact` (`winnow.core.models`) carries exactly:
+`Artifact` (`alvis.core.models`) carries exactly:
 
 | field          | meaning                                                            |
 | -------------- | ------------------------------------------------------------------ |
 | `step_id`      | stable, unique id for this document (page id, blob sha, ...)        |
 | `uri`          | canonical URL/path the document lives at (used for retrieval links) |
-| `content_type` | MIME type Winnow's extract stage understands (see step 3)           |
+| `content_type` | MIME type Alvis's extract stage understands (see step 3)           |
 | `data`         | the raw bytes to be ingested                                        |
 | `metadata`     | extra fields surfaced to users; keep it small and serialisable      |
 
 `fetch()` either returns artifacts or raises `SourceError`
-(`winnow.sources.base`) with an optional `status_code`.
+(`alvis.sources.base`) with an optional `status_code`.
 
 **Optional: cheap listing (recommended).** If your source can fingerprint a
 document without downloading its body — an S3 ETag, a GitLab/GitHub blob sha, a
 Confluence page version — also implement `ListingSource`
-(`winnow.sources.base`):
+(`alvis.sources.base`):
 
 ```python
 class ListingSource(Source, Protocol):
@@ -83,14 +83,14 @@ class ListingSource(Source, Protocol):
 
 Look at how the built-ins are organised — each adapter is one small module:
 
-- `src/winnow/sources/confluence.py` — a REST API adapter, the best template
+- `src/alvis/sources/confluence.py` — a REST API adapter, the best template
   for an HTTP connector.
-- `src/winnow/sources/fs.py` — the local-filesystem adapter.
-- `src/winnow/sources/github.py`, `gitlab.py`, `s3.py` — REST adapters that
+- `src/alvis/sources/fs.py` — the local-filesystem adapter.
+- `src/alvis/sources/github.py`, `gitlab.py`, `s3.py` — REST adapters that
   accept a `transport=` kwarg for testing.
 
 For an HTTP connector that talks to a REST API, use `HttpClient`
-(`winnow.sources.http`): it gives you retries/backoff on 429/5xx/network
+(`alvis.sources.http`): it gives you retries/backoff on 429/5xx/network
 errors, `Retry-After` honoring, token/basic auth from env vars
 (`api_token_env`, `username`), optional `verify=False` for self-signed TLS, and
 a `max_bytes` cap so oversized responses are aborted mid-read instead of
@@ -101,29 +101,29 @@ signing (see `s3.py` for a SigV4 example).
 
 ### 3. Wire it in — the five touch points
 
-1. **Module** — `src/winnow/sources/<name>.py` implementing `fetch()`.
-2. **Export** — add it to `__all__` in `src/winnow/sources/__init__.py`.
-3. **Registry** — `src/winnow/registry.py`: add the type string to
-   `KNOWN_SOURCES` so `winnow validate` recognises it.
-4. **Factory** — `src/winnow/factories.py`:
+1. **Module** — `src/alvis/sources/<name>.py` implementing `fetch()`.
+2. **Export** — add it to `__all__` in `src/alvis/sources/__init__.py`.
+3. **Registry** — `src/alvis/registry.py`: add the type string to
+   `KNOWN_SOURCES` so `alvis validate` recognises it.
+4. **Factory** — `src/alvis/factories.py`:
    - `build_source(...)` — map `config.type == "<name>"` to your class.
    - `source_identity(config)` — a stable `"<name>:<key>@<host>"` string; the
      index uses it to namespace points so `reconcile` prunes only your source's
      stale documents. Pick discriminator keys that uniquely identify a data
      scope (e.g. GitLab: `project@host`).
-5. **DSL** — `src/winnow/dsl.py`: add a `dsl.<name>(...)` builder mirroring the
+5. **DSL** — `src/alvis/dsl.py`: add a `dsl.<name>(...)` builder mirroring the
    YAML config keys, so the Python DSL and the YAML schema stay in parity.
 
-Config validation lives in `src/winnow/config/models.py` (`SourceConfig` is
+Config validation lives in `src/alvis/config/models.py` (`SourceConfig` is
 permissive `dict` today; type-specific keys are validated in the adapter).
 Document the YAML keys in the README source table.
 
 ### 4. Content types and formats
 
-`winnow.sources.content_types` maps extensions to MIME types. Your connector
+`alvis.sources.content_types` maps extensions to MIME types. Your connector
 should produce content types the `auto` extractor understands — Markdown
 (`text/markdown`), HTML (`text/html`), plain text / code (`text/plain`), or
-PDF/DOCX/XLSX for the `winnow[documents]` extra. If a remote format needs an
+PDF/DOCX/XLSX for the `alvis[documents]` extra. If a remote format needs an
 extension (e.g. GitLab raw blobs), derive it from the object name and pass it
 through `content_type()`.
 
@@ -133,16 +133,16 @@ No connector lands without:
 
 1. **A fixture** — a `tests/fixtures/` corpus of realistic sample data the
    adapter ingests (a couple of small files is plenty). Fixtures must not live
-   under a directory Winnow itself would ingest in tests.
+   under a directory Alvis itself would ingest in tests.
 2. **A golden test** — a test marked `@pytest.mark.golden` that runs the
    connector against canned service responses and diffs the `Artifact` output
    against a committed snapshot.
 
-`src/winnow/testing.py` provides the harness (used by every built-in in
+`src/alvis/testing.py` provides the harness (used by every built-in in
 `tests/test_golden_sources.py`):
 
 ```python
-from winnow.testing import MockServer, artifacts_snapshot, assert_golden
+from alvis.testing import MockServer, artifacts_snapshot, assert_golden
 
 @pytest.mark.golden
 async def test_golden_my_source() -> None:
@@ -166,8 +166,8 @@ async def test_golden_my_source() -> None:
   serialisable list so the snapshot is diff-able in review. Pass `root=` to
   scrub machine-specific absolute paths (see the `fs` golden test).
 - Snapshots live in `tests/golden/<name>.golden.json`. Run
-  `WINNOW_ACCEPT=1 pytest -m golden` to (re)write them, review the diff, and
-  commit. CI runs `pytest -m golden` **read-only** (no `WINNOW_ACCEPT`), so
+  `ALVIS_ACCEPT=1 pytest -m golden` to (re)write them, review the diff, and
+  commit. CI runs `pytest -m golden` **read-only** (no `ALVIS_ACCEPT`), so
   drift and missing snapshots fail loudly.
 
 **Register the golden test in `tests/golden/manifest.json`** under the
@@ -187,19 +187,19 @@ to work.
 
 You do **not** need to modify this repository to ship an adapter. A plugin is
 an ordinary installed Python package that registers itself under the
-`winnow.plugins` entry-point group and declares a `winnow.plugin.Plugin`:
+`alvis.plugins` entry-point group and declares a `alvis.plugin.Plugin`:
 
 ```toml
 # pyproject.toml
-[project.entry-points."winnow.plugins"]
+[project.entry-points."alvis.plugins"]
 kb-catalog = "kb_plugin:plugin"
 ```
 
 ```python
 # kb_plugin/__init__.py
-from winnow.plugin import Plugin
+from alvis.plugin import Plugin
 
-def _catalog(*, config, max_bytes=None):   # factory contract (see winnow/plugin.py)
+def _catalog(*, config, max_bytes=None):   # factory contract (see alvis/plugin.py)
     ...
 
 plugin = Plugin(
@@ -209,8 +209,8 @@ plugin = Plugin(
 )
 ```
 
-After `pip install .`, the adapter is accepted by `winnow validate`, listed by
-`winnow plugins`, and resolved by the stage factories — zero core changes.
+After `pip install .`, the adapter is accepted by `alvis validate`, listed by
+`alvis plugins`, and resolved by the stage factories — zero core changes.
 Plugins are validated their own adapter (mirroring built-ins), so plugin types
 may read any `config:` keys. The reference implementation is
 `examples/kb-plugin` (a `catalog` source with cheap-listing incremental
@@ -225,7 +225,7 @@ example + test + docs. External plugins are tracked in [docs/plugins.md]
 1. Fork, create a branch (`add-magnolia-connector`).
 2. Implement the connector + fixture + golden test + docs + README table row
    as one commit — the golden manifest, snapshot, and test never split.
-3. Run the full gate: `ruff check src tests`, `mypy src/winnow`,
+3. Run the full gate: `ruff check src tests`, `mypy src/alvis`,
    `pytest` (which includes `-m golden` read-only), and
    `python scripts/check_golden_coverage.py`.
 4. Open the pull request. CI runs lint, typecheck, the full suite on

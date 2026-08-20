@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from winnow.chunk import SizeChunker
-from winnow.core.models import Document, Section
+from alvis.chunk import SizeChunker
+from alvis.core.models import Document, Section
 
 
 async def test_size_chunker_splits_on_char_budget() -> None:

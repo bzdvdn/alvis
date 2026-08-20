@@ -6,10 +6,10 @@ import xml.etree.ElementTree as ET
 import httpx
 import pytest
 
-from winnow.sources.base import SourceError
-from winnow.sources.github import GitHubSource
-from winnow.sources.gitlab import GitLabSource
-from winnow.sources.s3 import S3Source
+from alvis.sources.base import SourceError
+from alvis.sources.github import GitHubSource
+from alvis.sources.gitlab import GitLabSource
+from alvis.sources.s3 import S3Source
 
 _S3_NS = "{http://s3.amazonaws.com/doc/2006-03-01/}"
 

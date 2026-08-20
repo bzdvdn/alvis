@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from winnow import dsl, run_async, watch_async
-from winnow.errors import PipelineError
-from winnow.observability import (
+from alvis import dsl, run_async, watch_async
+from alvis.errors import PipelineError
+from alvis.observability import (
     Metrics,
     _JsonFormatter,
     _TextFormatter,
@@ -37,7 +37,7 @@ class _Capture(logging.Handler):
 def captured_logs() -> Iterator[list[logging.LogRecord]]:
     records: list[logging.LogRecord] = []
     handler = _Capture(records)
-    logger = logging.getLogger("winnow")
+    logger = logging.getLogger("alvis")
     logger.addHandler(handler)
     logger.setLevel(logging.DEBUG)
     try:
@@ -49,7 +49,7 @@ def captured_logs() -> Iterator[list[logging.LogRecord]]:
 def _record(
     name: str, level: int = logging.INFO, extra: dict[str, object] | None = None
 ) -> logging.LogRecord:
-    record = logging.LogRecord("winnow", level, __file__, 1, name, (), None)
+    record = logging.LogRecord("alvis", level, __file__, 1, name, (), None)
     if extra is not None:
         record.extra = extra
     return record
@@ -127,7 +127,7 @@ def test_text_formatter_appends_fields() -> None:
 def test_real_logger_path_renders_fields(
     captured_logs: list[logging.LogRecord],
 ) -> None:
-    logging.getLogger("winnow").info("pipeline.completed", extra={"source": "fs", "chunks": 3})
+    logging.getLogger("alvis").info("pipeline.completed", extra={"source": "fs", "chunks": 3})
     payload = json.loads(_JsonFormatter().format(captured_logs[-1]))
     assert payload["event"] == "pipeline.completed"
     assert payload["source"] == "fs"

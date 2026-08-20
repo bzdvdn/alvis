@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from winnow import dsl
-from winnow.config import load_config
-from winnow.pipeline.runner import run_async
+from alvis import dsl
+from alvis.config import load_config
+from alvis.pipeline.runner import run_async
 
 
 def test_fs_dsl_matches_yaml(tmp_path: Path) -> None:
@@ -26,7 +26,7 @@ def test_fs_dsl_matches_yaml(tmp_path: Path) -> None:
 def test_s3_dsl_populates_config() -> None:
     cfg = dsl.s3(
         url="http://localhost:9000",
-        bucket="winnow",
+        bucket="alvis",
         access_key_env="A",
         secret_key_env="B",
         prefix="docs",
@@ -34,7 +34,7 @@ def test_s3_dsl_populates_config() -> None:
         region="eu-central-1",
     )
     assert cfg.type == "s3"
-    assert cfg.config["bucket"] == "winnow"
+    assert cfg.config["bucket"] == "alvis"
     assert cfg.config["prefix"] == "docs"
     assert cfg.config["exclude_globs"] == ["**/*.mp4"]
     assert cfg.config["region"] == "eu-central-1"
@@ -77,9 +77,9 @@ def test_size_chunk_strategy_roundtrips() -> None:
 
 
 def test_pgvector_dsl_populates_config() -> None:
-    cfg = dsl.pgvector(dsn="postgresql://winnow@localhost/winnow", table="chunks")
+    cfg = dsl.pgvector(dsn="postgresql://alvis@localhost/alvis", table="chunks")
     assert cfg.type == "pgvector"
-    assert cfg.config["dsn"] == "postgresql://winnow@localhost/winnow"
+    assert cfg.config["dsn"] == "postgresql://alvis@localhost/alvis"
     assert cfg.config["table"] == "chunks"
     assert "dsn_env" not in cfg.config
 

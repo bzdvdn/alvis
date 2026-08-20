@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from winnow.core.models import Artifact, Document
-from winnow.extract import AutoExtractor
+from alvis.core.models import Artifact, Document
+from alvis.extract import AutoExtractor
 
 MD = """\
 # Project Docs
@@ -10,7 +10,7 @@ Intro paragraph.
 
 ## Setup
 
-Run `pip install winnow`.
+Run `pip install alvis`.
 
 ## Deployment
 

@@ -16,4 +16,7 @@ venv/
 .coverage
 htmlcov/
 # incremental ingestion state
-.winnow/
+.alvis/
+
+# port pilot (workspace, not repo content)
+pilot/

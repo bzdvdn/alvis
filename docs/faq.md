@@ -1,6 +1,6 @@
 # FAQ
 
-## What is Winnow?
+## What is Alvis?
 
 A no-code knowledge ingestion and retrieval engine. It turns heterogeneous
 sources (GitLab, Confluence, S3, local files) and formats (Markdown, HTML,
@@ -30,7 +30,7 @@ vectors.
 
 They already are. Chunk point IDs are deterministic, identical content is
 overwritten, and a `reconcile` pass prunes points of changed or deleted
-documents per source identity. Add `winnow run --incremental` to skip
+documents per source identity. Add `alvis run --incremental` to skip
 unchanged documents end-to-end (no re-extract/chunk/embed/upsert) — the
 delta is reported and state is stored per source + pipeline signature.
 Enable the [embedding cache](../README.md#embedding-cache) to skip
@@ -38,38 +38,38 @@ re-embedding unchanged chunks.
 
 ## How do I ingest on every change (not just manually)?
 
-Run the incremental pipeline repeatedly — `winnow run --watch --interval 60`
+Run the incremental pipeline repeatedly — `alvis run --watch --interval 60`
 polls the sources every 60 s and ingests only what changed (cheap listing
 means unchanged remote objects aren't even downloaded). Same loop
-programmatically with `winnow.watch_async(configs, interval=...,
+programmatically with `alvis.watch_async(configs, interval=...,
 state_path=...)`, an async iterator of per-tick results. For instant
 reaction, keep `--watch` as the primitive a git post-push hook or a scheduler
 cron calls.
 
-## Can I add my own source without editing Winnow?
+## Can I add my own source without editing Alvis?
 
 Yes — the Plugin SDK (v1.1). Write an installable package that registers under
-the `winnow.plugins` entry-point group and declares a `winnow.plugin.Plugin`
-(module docstring of `winnow.plugin` documents the factory contract; the
-reference is `examples/kb-plugin`). After `pip install`, `winnow plugins`
-lists it and `winnow run`/`validate` accept its type string — no fork, no core
+the `alvis.plugins` entry-point group and declares a `alvis.plugin.Plugin`
+(module docstring of `alvis.plugin` documents the factory contract; the
+reference is `examples/kb-plugin`). After `pip install`, `alvis plugins`
+lists it and `alvis run`/`validate` accept its type string — no fork, no core
 change.
 
 ## How do I monitor what ingestion is doing?
 
 Structured logs, metrics, and (optionally) traces — see
-[docs/observability.md](observability.md). `winnow run --log-json --log-level
+[docs/observability.md](observability.md). `alvis run --log-json --log-level
 info pipeline.yaml` renders every per-run event as one JSON line; the
 process-wide metrics store counts runs/documents/chunks plus latency
 histograms per stage, exportable as Prometheus text with
-`winnow[observability]` installed. No extra dependency is required for the
+`alvis[observability]` installed. No extra dependency is required for the
 basic in-process store.
 
 ## Which index should I pick?
 
 - `memory` — tests and prototypes.
 - `qdrant` — the default for real use (`url`, `collection`).
-- `pgvector` — PostgreSQL + pgvector (`winnow[pgindex]`).
+- `pgvector` — PostgreSQL + pgvector (`alvis[pgindex]`).
 
 ## The embedder is deterministic. Is that real?
 
@@ -89,7 +89,7 @@ certificates.
 Both. Retrieval returns the nearest chunks (`SearchHit`); for a grounded
 answer add an OpenAI-compatible chat endpoint and the answer is synthesized
 with `[N]` citations tied to each `source_uri`. Without an API key,
-`winnow query --answer` falls back to numbered excerpts instead of failing:
+`alvis query --answer` falls back to numbered excerpts instead of failing:
 `answer(cfg, question, llm=Synthesizer(...))` / CLI `--answer`.
 
 ## Where do I report a bug or request a source?

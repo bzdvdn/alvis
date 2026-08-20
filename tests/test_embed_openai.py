@@ -5,13 +5,13 @@ import json
 import httpx
 import pytest
 
-from winnow.core.models import Chunk
-from winnow.embed.openai import ApiEmbedder
-from winnow.sources.base import SourceError
+from alvis.core.models import Chunk
+from alvis.embed.openai import ApiEmbedder
+from alvis.sources.base import SourceError
 
 
 def _chunks(*texts: str) -> list[Chunk]:
-    return [Chunk(text=t, source_uri="s3://winnow/x.md") for t in texts]
+    return [Chunk(text=t, source_uri="s3://alvis/x.md") for t in texts]
 
 
 async def test_embed_single() -> None:

@@ -5,8 +5,8 @@ import hashlib
 import httpx
 import pytest
 
-from winnow.sources.base import SourceError
-from winnow.sources.url import StaticUrlSource
+from alvis.sources.base import SourceError
+from alvis.sources.url import StaticUrlSource
 
 _HTML = b"<html><head><title>NikaRD docs</title></head><body><h1>Welcome</h1></body></html>"
 _OTHER_HTML = b"<html><head><title>About</title></head><body><p>About us</p></body></html>"

@@ -4,7 +4,7 @@ These exercise the contract every connector must satisfy — ``fetch()``
 returns ``Artifact`` objects with stable ``step_id``/``uri``/``content_type``/
 ``data``/``metadata`` — against canned service responses, and diff the result
 against a committed snapshot in ``tests/golden/``. Run read-only in CI with
-``pytest -m golden``; re-baseline locally with ``WINNOW_ACCEPT=1``.
+``pytest -m golden``; re-baseline locally with ``ALVIS_ACCEPT=1``.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from winnow.sources import (
+from alvis.sources import (
     ConfluenceSource,
     FilesystemSource,
     GitHubSource,
@@ -23,7 +23,7 @@ from winnow.sources import (
     S3Source,
     StaticUrlSource,
 )
-from winnow.testing import MockServer, artifacts_snapshot, assert_golden
+from alvis.testing import MockServer, artifacts_snapshot, assert_golden
 
 _S3_NS = "{http://s3.amazonaws.com/doc/2006-03-01/}"
 
@@ -55,7 +55,7 @@ async def test_golden_confluence() -> None:
             "results": [
                 {
                     "id": "100",
-                    "title": "Winnow Overview",
+                    "title": "Alvis Overview",
                     "_links": {"webui": "/pages/viewpage.action?pageId=100"},
                     "version": {"number": 3},
                 },
@@ -74,11 +74,11 @@ async def test_golden_confluence() -> None:
         "/rest/api/content/100",
         json_payload={
             "id": "100",
-            "title": "Winnow Overview",
+            "title": "Alvis Overview",
             "version": {"number": 3},
             "body": {
                 "storage": {
-                    "value": "<h1>Winnow Overview</h1><p>Winnow is a no-code "
+                    "value": "<h1>Alvis Overview</h1><p>Alvis is a no-code "
                     "knowledge ingestion engine.</p>"
                 }
             },
@@ -188,7 +188,7 @@ async def test_golden_static_url() -> None:
         "GET",
         "/",
         content=(
-            b"<html><head><title>Winnow Docs</title></head>"
+            b"<html><head><title>Alvis Docs</title></head>"
             b"<body><h1>Static URL source</h1><p>Plain HTML ingesting.</p></body></html>"
         ),
     )
@@ -197,7 +197,7 @@ async def test_golden_static_url() -> None:
         "/about",
         content=(
             b"<html><head><title>About</title></head>"
-            b"<body><h1>About Winnow</h1></body></html>"
+            b"<body><h1>About Alvis</h1></body></html>"
         ),
     )
 

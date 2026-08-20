@@ -1,6 +1,6 @@
 # End-to-end against docker-compose services:
 #   docker compose up -d --build
-#   winnow run examples/confluence-qdrant.yaml
+#   alvis run examples/confluence-qdrant.yaml
 pipeline:
   source:
     type: confluence
@@ -24,4 +24,4 @@ pipeline:
     type: qdrant
     config:
       url: http://localhost:6333
-      collection: winnow_docs
+      collection: alvis_docs

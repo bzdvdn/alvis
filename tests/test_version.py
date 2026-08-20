@@ -1,4 +1,4 @@
-from winnow import __version__
+from alvis import __version__
 
 
 def test_version() -> None:

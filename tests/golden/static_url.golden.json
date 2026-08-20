@@ -1,18 +1,18 @@
 [
   {
     "content_type": "text/html",
-    "data": "<html><head><title>Winnow Docs</title></head><body><h1>Static URL source</h1><p>Plain HTML ingesting.</p></body></html>",
+    "data": "<html><head><title>Alvis Docs</title></head><body><h1>Static URL source</h1><p>Plain HTML ingesting.</p></body></html>",
     "metadata": {
       "path": "https://docs.example.com/",
       "sourceUrl": "https://docs.example.com/",
-      "title": "Winnow Docs"
+      "title": "Alvis Docs"
     },
     "step_id": "https://docs.example.com/",
     "uri": "https://docs.example.com/"
   },
   {
     "content_type": "text/html",
-    "data": "<html><head><title>About</title></head><body><h1>About Winnow</h1></body></html>",
+    "data": "<html><head><title>About</title></head><body><h1>About Alvis</h1></body></html>",
     "metadata": {
       "path": "https://docs.example.com/about",
       "sourceUrl": "https://docs.example.com/about",

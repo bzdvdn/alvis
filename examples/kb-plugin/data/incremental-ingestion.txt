@@ -1,3 +1,3 @@
 # Incremental Ingestion
 
-Run winnow with --incremental and unchanged documents are skipped end-to-end.
+Run alvis with --incremental and unchanged documents are skipped end-to-end.
