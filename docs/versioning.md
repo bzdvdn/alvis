@@ -7,9 +7,10 @@ versioning for YAML / Canonical Content Tree (see
 
 ## Release numbers
 
-- **`0.x` (current, 0.6.0).** Under active development: `MINOR` may contain
-  breaking changes for *unstable* surfaces, `PATCH` is fixes only. The
-  stable surface below is honored from its freeze and beyond `1.0.0`.
+- **`1.0.0rc1` (current release candidate).** The stable surface is frozen;
+  RC releases may still contain release-blocking fixes, but no intentional
+  contract changes. The stable surface below is honored from its freeze and
+  beyond `1.0.0`.
 - **`1.0.0`.** Freezes the stable surface; `MAJOR` thereafter means a
   breaking change to it. Anything not listed is public-but-internal and may
   change with a `MINOR` bump and a changelog note.

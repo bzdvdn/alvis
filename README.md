@@ -9,7 +9,7 @@ Source → Artifact → Extraction → Canonical Content Tree → Chunking → E
 
 ## Status
 
-v0.6.0. Core pipeline runs end-to-end: fs/Confluence/GitHub/GitLab/S3/static-URL sources → extract → chunk → embed → memory/Qdrant/pgvector index, plus vector retrieval (`alvis.query`, CLI `alvis query`). Async-native (httpx). The embedder ships a deterministic placeholder (`default`) plus an OpenAI-compatible API adapter (`openai`).
+`1.0.0rc1` (release candidate). Core pipeline runs end-to-end: fs/Confluence/GitHub/GitLab/S3/static-URL sources → extract → chunk → embed → memory/Qdrant/pgvector index, plus vector retrieval (`alvis.query`, CLI `alvis query`). Async-native (httpx). The embedder ships a deterministic placeholder (`default`) plus an OpenAI-compatible API adapter (`openai`).
 
 ## Formats
 
@@ -198,7 +198,7 @@ CI builds and publishes `bzdvdn/alvis` (linux/amd64 + linux/arm64) for every
 and just pull:
 
 ```bash
-docker pull bzdvdn/alvis:v0.6.0
+docker pull bzdvdn/alvis:v1.0.0rc1
 ```
 
 The image runs as an unprivileged `alvis` user in `/workspace`; incremental
