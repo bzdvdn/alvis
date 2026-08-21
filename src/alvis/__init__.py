@@ -16,7 +16,7 @@ from alvis.pipeline.runner import (
     watch_async,
 )
 
-__version__ = "0.6.0"
+__version__ = "1.0.0rc2"
 
 __all__ = [
     "Answer",

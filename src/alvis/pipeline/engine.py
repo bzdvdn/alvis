@@ -120,6 +120,8 @@ class PipelineEngine:
         value = source.config.get(key) if key else None
         if value is not None:
             return f"{source.type} ({key}={value})"
+        if source.type == "gitlab" and source.config.get("group") is not None:
+            return f"{source.type} (group={source.config['group']})"
         return source.type
 
     def _chunk_summary(self) -> str:

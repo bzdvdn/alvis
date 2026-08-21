@@ -45,6 +45,27 @@ def test_self_hosted_gitlab_keeps_url() -> None:
     assert cfg.config["url"] == "https://git.example.com"
 
 
+def test_gitlab_group_config_roundtrips() -> None:
+    cfg = dsl.gitlab(
+        group="grp",
+        project_include_globs=["grp/docs-*"],
+        project_exclude_globs=["grp/archive-*"],
+        include_archived=True,
+    )
+    assert cfg.config["group"] == "grp"
+    assert cfg.config["project_include_globs"] == ["grp/docs-*"]
+    assert cfg.config["project_exclude_globs"] == ["grp/archive-*"]
+    assert cfg.config["include_archived"] is True
+    assert "project" not in cfg.config
+
+
+def test_gitlab_requires_project_or_group() -> None:
+    import pytest
+
+    with pytest.raises(ValueError):
+        dsl.gitlab()
+
+
 def test_defaults_are_omitted_from_config() -> None:
     cfg = dsl.s3(url="u", bucket="b", access_key_env="A", secret_key_env="S")
     assert "region" not in cfg.config
@@ -82,6 +103,15 @@ def test_pgvector_dsl_populates_config() -> None:
     assert cfg.config["dsn"] == "postgresql://alvis@localhost/alvis"
     assert cfg.config["table"] == "chunks"
     assert "dsn_env" not in cfg.config
+
+
+def test_sqlite_dsl_populates_config() -> None:
+    cfg = dsl.sqlite(path="local.db")
+    assert cfg.type == "sqlite"
+    assert cfg.config["path"] == "local.db"
+
+    default = dsl.sqlite()
+    assert default.config["path"] == "alvis.db"
 
 
 async def test_dsl_pipeline_runs(tmp_path: Path) -> None:

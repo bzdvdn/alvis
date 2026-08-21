@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 
 from alvis.core.ids import point_id
 from alvis.core.models import Chunk, SearchHit
+from alvis.index._math import clamp, cosine_similarity
 
 
 @dataclass
@@ -74,26 +75,13 @@ class MemoryIndex:
     async def search(self, vector: list[float], *, top_k: int = 5) -> list[SearchHit]:
         """Brute-force cosine similarity over in-memory points, best first."""
         points = list(self.points.values())
-        points.sort(key=lambda point: _cosine(vector, point.vector), reverse=True)
+        points.sort(key=lambda point: cosine_similarity(vector, point.vector), reverse=True)
         return [
             SearchHit(
                 text=point.chunk.text,
                 source_uri=point.chunk.source_uri,
                 metadata=dict(point.chunk.metadata),
-                score=_bounded(_cosine(vector, point.vector)),
+                score=clamp(cosine_similarity(vector, point.vector)),
             )
             for point in points[:top_k]
         ]
-
-
-def _cosine(left: list[float], right: list[float]) -> float:
-    dot: float = sum(a * b for a, b in zip(left, right, strict=True))
-    left_norm: float = sum(a * a for a in left) ** 0.5
-    right_norm: float = sum(b * b for b in right) ** 0.5
-    if left_norm == 0.0 or right_norm == 0.0:
-        return 0.0
-    return dot / (left_norm * right_norm)
-
-
-def _bounded(value: float) -> float:
-    return max(-1.0, min(1.0, value))

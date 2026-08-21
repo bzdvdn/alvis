@@ -132,6 +132,90 @@ async def test_gitlab_fetches_raw_blobs_and_encodes_project() -> None:
     assert any("?ref=" in p for p in seen)
 
 
+async def test_gitlab_group_traverses_all_projects() -> None:
+    seen_projects: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raw = request.url.raw_path.decode().split("?")[0]
+        if "/groups/" in request.url.path and request.url.path.endswith("/projects"):
+            return httpx.Response(
+                200,
+                json=[
+                    {"path_with_namespace": "grp/docs"},
+                    {"path_with_namespace": "grp/code"},
+                ],
+            )
+        if raw.endswith("/repository/tree"):
+            seen_projects.append(raw)
+            proj = raw.split("/projects/")[1].split("/repository")[0]
+            if proj == "grp%2Fdocs":
+                return httpx.Response(
+                    200,
+                    json=[{"id": "d1", "type": "blob", "path": "README.md"}],
+                )
+            return httpx.Response(
+                200,
+                json=[{"id": "c1", "type": "blob", "path": "main.py"}],
+            )
+        if raw.endswith("/blobs/d1/raw"):
+            return httpx.Response(200, content=b"# Docs")
+        if raw.endswith("/blobs/c1/raw"):
+            return httpx.Response(200, content=b"print('hi')")
+        return httpx.Response(500, json={})
+
+    source = GitLabSource(
+        group="grp",
+        transport=httpx.MockTransport(handler),
+    )
+    artifacts = await source.fetch()
+    assert {a.metadata["path"] for a in artifacts} == {"README.md", "main.py"}
+    assert {a.metadata["project"] for a in artifacts} == {"grp/docs", "grp/code"}
+    assert len(seen_projects) == 2
+
+    metas = await source.list_documents()
+    assert {m.uri for m in metas} == {
+        "https://gitlab.com/grp/docs/-/blob/main/README.md",
+        "https://gitlab.com/grp/code/-/blob/main/main.py",
+    }
+
+
+async def test_gitlab_group_project_globs_filter() -> None:
+    seen: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raw = request.url.raw_path.decode().split("?")[0]
+        if "/groups/" in request.url.path and request.url.path.endswith("/projects"):
+            return httpx.Response(
+                200,
+                json=[
+                    {"path_with_namespace": "grp/docs"},
+                    {"path_with_namespace": "grp/secret"},
+                    {"path_with_namespace": "grp/archive-old"},
+                ],
+            )
+        if raw.endswith("/repository/tree"):
+            seen.append(raw)
+            return httpx.Response(200, json=[])
+        return httpx.Response(500, json={})
+
+    source = GitLabSource(
+        group="grp",
+        project_include_globs=["grp/docs", "grp/secret"],
+        project_exclude_globs=["grp/secret"],
+        transport=httpx.MockTransport(handler),
+    )
+    await source.list_documents()
+    assert len(seen) == 1
+    assert "grp%2Fdocs" in seen[0]
+    assert "grp%2Fsecret" not in seen[0]
+    assert "grp%2Farchive-old" not in seen[0]
+
+
+async def test_gitlab_requires_project_or_group() -> None:
+    with pytest.raises(ValueError):
+        GitLabSource(transport=httpx.MockTransport(lambda r: httpx.Response(200)))
+
+
 async def test_gitlab_pagination() -> None:
     page_one = [{"id": f"s{i}", "type": "blob", "path": f"f{i}.md"} for i in range(2)]
 

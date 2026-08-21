@@ -128,3 +128,14 @@ distribution silently index garbage embeddings in corpora that skip config.
 - 2026-08-20 — product renamed to **Alvis** (`winnow` → `alvis`, package,
   CLI, docs, instance names); PyPI `winnow` confirmed taken. I-2 now also
   requires claiming/distributing the `alvis` name on PyPI.
+- 2026-08-20 — RC1 release engineering: version `1.0.0rc1` (+ Beta classifier),
+  CHANGELOG, PyPI trusted-publisher workflow, Qdrant CI integration job;
+  Docker publish moved from CI into the release workflow.
+- 2026-08-20 (RC2) — evaluated a standalone `chromadb` backend and concluded it
+  was scope duplication (Qdrant/pgvector server backends + `memory` already
+  exist). Shipped instead a **persistent single-file `sqlite` index** (zero
+  new dependencies) as the dev/prototype backend; covers restart-survival
+  without infra, per variant B.
+- 2026-08-21 — RC2 release engineering: version `1.0.0rc2`, CHANGELOG entry for
+  the `sqlite` index, `dsl.sqlite` builder, `alvis init --index sqlite`
+  scaffolding, and `sqlite` added to `KNOWN_INDEXES`.

@@ -101,28 +101,52 @@ def github(
 
 
 def gitlab(
-    project: str,
+    project: str | None = None,
+    group: str | None = None,
     url: str = "https://gitlab.com",
     branch: str = "main",
     path: str | None = None,
     include_globs: list[str] | None = None,
     exclude_globs: list[str] | None = None,
+    project_include_globs: list[str] | None = None,
+    project_exclude_globs: list[str] | None = None,
+    include_archived: bool = False,
     api_token_env: str | None = None,
     per_page: int = 100,
     retries: int = 3,
     retry_backoff: float = 1.0,
     verify: bool | str = True,
 ) -> SourceConfig:
-    """Ingest blobs of a GitLab project (works with self-hosted instances)."""
+    """Ingest blobs of a GitLab project (works with self-hosted instances).
+
+    Pass ``project`` for a single repository, or ``group`` to traverse every
+    project in a group. Use ``project_include_globs`` / ``project_exclude_globs``
+    to narrow which group repositories are ingested (matched against the full
+    ``group/project`` path).
+    """
+    if project is None and group is None:
+        raise ValueError("gitlab() requires 'project' or 'group'")
     return SourceConfig(
         type="gitlab",
         config={
-            "project": project,
+            **({"project": project} if project else {}),
+            **({"group": group} if group else {}),
             **({"url": url} if url != "https://gitlab.com" else {}),
             **({"branch": branch} if branch != "main" else {}),
             **({"path": path} if path else {}),
             **({"include_globs": include_globs} if include_globs else {}),
             **({"exclude_globs": exclude_globs} if exclude_globs else {}),
+            **(
+                {"project_include_globs": project_include_globs}
+                if project_include_globs
+                else {}
+            ),
+            **(
+                {"project_exclude_globs": project_exclude_globs}
+                if project_exclude_globs
+                else {}
+            ),
+            **({"include_archived": include_archived} if include_archived else {}),
             **({"api_token_env": api_token_env} if api_token_env else {}),
             **({"per_page": per_page} if per_page != 100 else {}),
             **({"retries": retries} if retries != 3 else {}),
@@ -285,6 +309,16 @@ def qdrant(
 def memory() -> IndexConfig:
     """In-memory index (tests, small prototypes)."""
     return IndexConfig(type="memory")
+
+
+def sqlite(path: str = "alvis.db") -> IndexConfig:
+    """Store vectors in a persistent single-file SQLite database.
+
+    No extra dependencies; ideal for dev and small prototypes that need to
+    survive process restarts. ``path`` is a ``.db`` file, or ``:memory:`` for
+    an ephemeral store.
+    """
+    return IndexConfig(type="sqlite", config={"path": path})
 
 
 def pgvector(

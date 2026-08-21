@@ -32,13 +32,14 @@ run(config)                      # sync run (own event loop)
 | `dsl.fs(path, pattern)` | `fs`            | text files under a directory              |
 | `dsl.confluence(...)`   | `confluence`    | pages of a Confluence space               |
 | `dsl.github(...)`       | `github`        | blobs of a repository tree                |
-| `dsl.gitlab(project, url=)` | `gitlab`    | project blobs; self-hosted via `url`      |
+| `dsl.gitlab(project, group=, url=)` | `gitlab`    | project or group-repo blobs; self-hosted via `url`      |
 | `dsl.s3(...)`           | `s3`            | S3 bucket objects (SigV4, no boto3)       |
 | `dsl.extract()`         | `auto`          | markdown/html/plain/pdf/docx/xlsx → tree  |
 | `dsl.chunk(max_tokens, overlap, strategy)` | `auto`  | auto/sections/size chunking |
 | `dsl.embed_openai(...)` | `openai`        | OpenAI-compatible embedder API            |
 | `dsl.qdrant(url, collection)` | `qdrant`  | Qdrant index                              |
 | `dsl.pgvector(dsn, dsn_env, table)` | `pgvector` | PostgreSQL + pgvector index (`alvis[pgindex]`) |
+| `dsl.sqlite(path)`        | `sqlite`        | persistent single-file index (no extra deps) |
 | `dsl.memory()`          | `memory`        | in-memory index (tests)                   |
 
 Source builders accept the same keys as the YAML `config` blocks; defaults

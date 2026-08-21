@@ -9,7 +9,7 @@ Source → Artifact → Extraction → Canonical Content Tree → Chunking → E
 
 ## Status
 
-`1.0.0rc1` (release candidate). Core pipeline runs end-to-end: fs/Confluence/GitHub/GitLab/S3/static-URL sources → extract → chunk → embed → memory/Qdrant/pgvector index, plus vector retrieval (`alvis.query`, CLI `alvis query`). Async-native (httpx). The embedder ships a deterministic placeholder (`default`) plus an OpenAI-compatible API adapter (`openai`).
+`1.0.0rc2` (release candidate). Core pipeline runs end-to-end: fs/Confluence/GitHub/GitLab/S3/static-URL sources → extract → chunk → embed → memory/SQLite/Qdrant/pgvector index, plus vector retrieval (`alvis.query`, CLI `alvis query`). Async-native (httpx). The embedder ships a deterministic placeholder (`default`) plus an OpenAI-compatible API adapter (`openai`).
 
 ## Formats
 
@@ -80,7 +80,7 @@ whatever is missing. See [docs/status.md](docs/status.md).
 | `fs`        | text files under a directory                                 | `path`, `pattern`                                                               |
 | `confluence`| pages of a space (REST API)                                  | `url`, `space`, `username`, `api_token_env`                                     |
 | `github`    | blobs of a repository tree (REST API)                        | `repo`, `branch`, `path`, `include_globs`, `exclude_globs`, `api_token_env`     |
-| `gitlab`    | blobs of a project repository (REST API; self-hosted OK)     | `url`, `project`, `branch`, `path`, `include_globs`, `exclude_globs`, `api_token_env` |
+| `gitlab`    | blobs of a project repository, or every repo in a group (REST API; self-hosted OK) | `url`, `project`, `group`, `branch`, `path`, `include_globs`, `exclude_globs`, `project_include_globs`, `project_exclude_globs`, `include_archived`, `api_token_env` |
 | `s3`        | text objects in a bucket (SigV4, no boto3; MinIO-compatible) | `url`, `bucket`, `access_key_env`, `secret_key_env`, `region`, `prefix`, `include_globs`, `exclude_globs` |
 | `static_url`| plain HTML pages served over HTTP(S), no JS needed            | `urls`, `api_token_env`, `max_bytes`, `timeout`                                                  |
 
@@ -198,7 +198,7 @@ CI builds and publishes `bzdvdn/alvis` (linux/amd64 + linux/arm64) for every
 and just pull:
 
 ```bash
-docker pull bzdvdn/alvis:v1.0.0rc1
+docker pull bzdvdn/alvis:v1.0.0rc2
 ```
 
 The image runs as an unprivileged `alvis` user in `/workspace`; incremental
@@ -294,6 +294,8 @@ pipeline.yaml: 12 documents, 87 chunks indexed
 - `pgvector` — PostgreSQL + pgvector column
   (`dsn` / `dsn_env`, `table`, requires `pip install alvis[pgindex]`).
   See `examples/pgvector.yaml` and the `postgres` service in docker-compose.
+- `sqlite` — persistent single-file store (`path`), no extra dependencies; a
+  chroma-style dev backend that survives restarts. `alvis init --index sqlite`.
 - `memory` — in-memory store for tests and prototypes.
 
 ### Retrieval

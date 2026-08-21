@@ -59,6 +59,23 @@ pipeline:
       collection: team_kb
 ```
 
+To ingest **every repository in a group** instead of one project, swap `project`
+for `group` and narrow the set with project globs (matched against the full
+`group/project` path; exclude wins):
+
+```yaml
+pipeline:
+  source:
+    type: gitlab
+    config:
+      url: https://gitlab.example.com
+      group: team
+      project_include_globs: ["team/docs-*", "team/team-*"]
+      project_exclude_globs: ["team/team-archive"]
+      include_globs: ["**/*.md"]
+      api_token_env: GITLAB_TOKEN
+```
+
 Run against local services (real Qdrant, mock Confluence, MinIO) with
 docker-compose — see the repo README for the full walkthrough.
 

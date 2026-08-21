@@ -40,7 +40,7 @@ KNOWN_SOURCES: set[str] = {"fs", "confluence", "github", "gitlab", "s3", "static
 KNOWN_EXTRACT_STRATEGIES: set[str] = {"auto"}
 KNOWN_CHUNK_STRATEGIES: set[str] = {"auto", "sections", "size"}
 KNOWN_EMBEDDERS: set[str] = {"default", "openai"}
-KNOWN_INDEXES: set[str] = {"memory", "qdrant", "pgvector"}
+KNOWN_INDEXES: set[str] = {"memory", "qdrant", "pgvector", "sqlite"}
 
 
 def check_pipeline_supported(

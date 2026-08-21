@@ -95,13 +95,13 @@ docker compose up -d --build
 
 ```
 alvis init                          # confluence source + qdrant index
-alvis init --source fs --index memory
+alvis init --source fs --index sqlite
 alvis init --source github --index pgvector     # pgvector uses dsn_env: POSTGRES_DSN
 ```
 
 Available sources: `fs`, `confluence`, `github`, `gitlab`, `s3`, `static_url`;
 available
-indexes: `memory`, `qdrant`, `pgvector`. It refuses to overwrite an existing
+indexes: `memory`, `sqlite`, `qdrant`, `pgvector`. It refuses to overwrite an existing
 file unless `--force`.
 
 ## Secrets: `.env` files and fail-fast validation

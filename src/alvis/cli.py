@@ -135,6 +135,7 @@ _SOURCE_TEMPLATES: dict[str, dict[str, object]] = {
 
 _INDEX_TEMPLATES: dict[str, dict[str, object]] = {
     "memory": {"type": "memory", "config": {}},
+    "sqlite": {"type": "sqlite", "config": {"path": "alvis.db"}},
     "qdrant": {
         "type": "qdrant",
         "config": {"url": "http://localhost:6333", "collection": "alvis_docs"},
@@ -200,7 +201,7 @@ def init(
     index: str = typer.Option(  # noqa: B008
         "qdrant",
         "--index",
-        help="Index adapter to scaffold (memory, qdrant, pgvector).",
+        help="Index adapter to scaffold (memory, sqlite, qdrant, pgvector).",
     ),
     force: bool = typer.Option(False, "--force", "-f", help="Overwrite an existing alvis.yaml."),
     path: Path = typer.Argument(  # noqa: B008

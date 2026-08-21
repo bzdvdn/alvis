@@ -1,0 +1,25 @@
+# Persistent single-file dev/prototype pipeline.
+# No external services: vectors are stored in a local SQLite database that
+# survives restarts (chroma-style backend, zero extra dependencies).
+pipeline:
+  source:
+    type: fs
+    config:
+      path: ./docs
+
+  extract:
+    strategy: auto
+
+  chunk:
+    strategy: auto
+    config:
+      max_tokens: 200
+      overlap: 20
+
+  embed:
+    type: default
+
+  index:
+    type: sqlite
+    config:
+      path: alvis.db
