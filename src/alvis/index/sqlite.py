@@ -16,12 +16,14 @@ import asyncio
 import json
 import sqlite3
 import threading
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from alvis.core.ids import point_id
 from alvis.core.models import Chunk, SearchHit
+from alvis.index._acl import acl_visible
 from alvis.index._math import clamp, cosine_similarity
+from alvis.index.keyword import bm25_scores, tokenize
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS points (
@@ -128,20 +130,39 @@ class SqliteIndex:
 
         await asyncio.to_thread(_run)
 
-    async def search(self, vector: list[float], *, top_k: int = 5) -> list[SearchHit]:
-        """Brute-force cosine similarity over stored points, best first."""
+    async def search(
+        self,
+        vector: list[float],
+        *,
+        top_k: int = 5,
+        filters: Mapping[str, str] | None = None,
+        principals: Sequence[str] | None = None,
+    ) -> list[SearchHit]:
+        """Brute-force cosine similarity over stored points, best first.
 
-        def _read() -> list[tuple[float, str, str, Mapping[str, object]]]:
+        ``filters`` keeps only rows whose metadata matches every pair;
+        applied before ranking (metadata is JSON, so filtered in Python).
+        ``principals`` additionally drops rows whose ``acl`` metadata
+        doesn't include any of them.
+        """
+
+        def _read() -> list[tuple[float, str, str, dict[str, object]]]:
             connection = self._get_connection()
             with self._lock:
                 rows = connection.execute(
                     "SELECT text, uri, metadata, vector FROM points"
                 ).fetchall()
-            scored: list[tuple[float, str, str, Mapping[str, object]]] = []
+            scored: list[tuple[float, str, str, dict[str, object]]] = []
             for text, uri, metadata_raw, vector_raw in rows:
+                metadata = json.loads(metadata_raw)
+                if filters and not all(
+                    str(metadata.get(key)) == value for key, value in filters.items()
+                ):
+                    continue
+                if not acl_visible(metadata, principals):
+                    continue
                 stored = json.loads(vector_raw)
                 similarity = clamp(cosine_similarity(vector, stored))
-                metadata = json.loads(metadata_raw)
                 scored.append((similarity, text, uri, metadata))
             scored.sort(key=lambda item: item[0], reverse=True)
             return scored
@@ -155,6 +176,43 @@ class SqliteIndex:
                 score=score,
             )
             for score, text, uri, metadata in scored[:top_k]
+        ]
+
+    async def keyword_search(
+        self,
+        text: str,
+        *,
+        top_k: int = 5,
+        filters: Mapping[str, str] | None = None,
+        principals: Sequence[str] | None = None,
+    ) -> list[SearchHit]:
+        """BM25 keyword search over stored points, best first."""
+
+        def _read() -> list[tuple[str, str, dict[str, object]]]:
+            connection = self._get_connection()
+            with self._lock:
+                rows = connection.execute(
+                    "SELECT text, uri, metadata FROM points"
+                ).fetchall()
+            kept: list[tuple[str, str, dict[str, object]]] = []
+            for row_text, uri, metadata_raw in rows:
+                metadata = json.loads(metadata_raw)
+                if filters and not all(
+                    str(metadata.get(key)) == value for key, value in filters.items()
+                ):
+                    continue
+                if not acl_visible(metadata, principals):
+                    continue
+                kept.append((row_text, uri, metadata))
+            return kept
+
+        rows = await asyncio.to_thread(_read)
+        query_tokens = tokenize(text)
+        scores = bm25_scores(query_tokens, [tokenize(row[0]) for row in rows])
+        ranked = sorted(zip(rows, scores, strict=True), key=lambda item: item[1], reverse=True)
+        return [
+            SearchHit(text=row_text, source_uri=uri, metadata=metadata, score=score)
+            for (row_text, uri, metadata), score in ranked[:top_k]
         ]
 
     async def count(self) -> int:

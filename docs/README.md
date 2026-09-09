@@ -8,6 +8,7 @@ Guides for the no-code knowledge ingestion engine.
 - [Plugin registry](plugins.md) — built-in and community plugins (v1.1 SDK)
 - [Observability](observability.md) — structured logging, metrics, tracing, Prometheus export
 - [Python DSL guide](dsl.md) — describing pipelines from code
+- [Retrieval evaluation](evaluation.md) — hit rate / MRR harness, `alvis eval`
 - [Schema & versioning](schema.md) — the YAML contract and Canonical Content Tree evolution policy
 - [Release 1.0 tracker](release-1.0.md) — open issues blocking the first stable release
 

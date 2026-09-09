@@ -1,0 +1,10 @@
+# Retrieval-quality cases for examples/eval-pipeline.yaml (examples/docs/*).
+# Each case: a query and a substring of the source document it should surface.
+- query: "how do I install alvis with pip"
+  expected_source_uri: "alvis-guide.md"
+- query: "which vector index backends does alvis support"
+  expected_source_uri: "alvis-guide.md"
+- query: "what services does the dev environment docker-compose run"
+  expected_source_uri: "infra.md"
+- query: "how does qdrant serve nearest-neighbour search"
+  expected_source_uri: "infra.md"

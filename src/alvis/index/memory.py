@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 from alvis.core.ids import point_id
 from alvis.core.models import Chunk, SearchHit
+from alvis.index._acl import acl_visible
 from alvis.index._math import clamp, cosine_similarity
+from alvis.index.keyword import bm25_scores, tokenize
+
+
+def _matches(metadata: Mapping[str, object], filters: Mapping[str, str] | None) -> bool:
+    if not filters:
+        return True
+    return all(str(metadata.get(key)) == value for key, value in filters.items())
 
 
 @dataclass
@@ -72,9 +80,26 @@ class MemoryIndex:
         """Return stored ``(chunk, vector)`` pairs."""
         return [(p.chunk, p.vector) for p in self.points.values()]
 
-    async def search(self, vector: list[float], *, top_k: int = 5) -> list[SearchHit]:
-        """Brute-force cosine similarity over in-memory points, best first."""
-        points = list(self.points.values())
+    async def search(
+        self,
+        vector: list[float],
+        *,
+        top_k: int = 5,
+        filters: Mapping[str, str] | None = None,
+        principals: Sequence[str] | None = None,
+    ) -> list[SearchHit]:
+        """Brute-force cosine similarity over in-memory points, best first.
+
+        ``filters`` keeps only points whose metadata matches every pair.
+        ``principals`` additionally drops points whose ``acl`` metadata
+        doesn't include any of them (see :class:`alvis.index.base.Indexer`).
+        """
+        points = [
+            p
+            for p in self.points.values()
+            if _matches(p.chunk.metadata, filters)
+            and acl_visible(p.chunk.metadata, principals)
+        ]
         points.sort(key=lambda point: cosine_similarity(vector, point.vector), reverse=True)
         return [
             SearchHit(
@@ -84,4 +109,32 @@ class MemoryIndex:
                 score=clamp(cosine_similarity(vector, point.vector)),
             )
             for point in points[:top_k]
+        ]
+
+    async def keyword_search(
+        self,
+        text: str,
+        *,
+        top_k: int = 5,
+        filters: Mapping[str, str] | None = None,
+        principals: Sequence[str] | None = None,
+    ) -> list[SearchHit]:
+        """BM25 keyword search over in-memory points, best first."""
+        points = [
+            p
+            for p in self.points.values()
+            if _matches(p.chunk.metadata, filters)
+            and acl_visible(p.chunk.metadata, principals)
+        ]
+        query_tokens = tokenize(text)
+        scores = bm25_scores(query_tokens, [tokenize(p.chunk.text) for p in points])
+        ranked = sorted(zip(points, scores, strict=True), key=lambda item: item[1], reverse=True)
+        return [
+            SearchHit(
+                text=point.chunk.text,
+                source_uri=point.chunk.source_uri,
+                metadata=dict(point.chunk.metadata),
+                score=score,
+            )
+            for point, score in ranked[:top_k]
         ]

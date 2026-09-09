@@ -18,16 +18,12 @@ from alvis.index import PgVectorIndex
 class _Conn:
     """Fake psycopg async connection that records executed statements."""
 
+    closed = False
+
     def __init__(self, index: PgVectorIndex) -> None:
         self._index = index
         self.statements: list[str] = []
         self.params: list[tuple[Any, ...]] = []
-
-    async def __aenter__(self) -> _Conn:
-        return self
-
-    async def __aexit__(self, *exc: Any) -> None:
-        return None
 
     async def compose(self, sql: Any) -> str:
         return sql.as_string(None)
@@ -109,6 +105,56 @@ def test_pgvector_reconcile_prunes_stale_hashes() -> None:
 
     assert "unnest" in conn.statements[0]
     assert conn.params[0] == ("s3", ["s3://a", "s3://b"], ["h1", "h2"])
+
+
+def test_pgvector_reuses_one_connection_across_calls() -> None:
+    """Two upserts must not open a second connection (see pgvector.py docstring)."""
+    index = PgVectorIndex(dsn="postgresql://u@h/db")
+    connect_calls = 0
+    conn = _Conn(index)
+
+    async def connect() -> _Conn:
+        nonlocal connect_calls
+        connect_calls += 1
+        return conn
+
+    index._connect = connect  # type: ignore[method-assign]
+
+    async def run() -> None:
+        chunk_a = Chunk(text="a", source_uri="s3://a")
+        chunk_b = Chunk(text="b", source_uri="s3://b")
+        await index.upsert(chunk_a, [0.1, 0.2], source_id="s3", artifact_hash="h1")
+        await index.upsert(chunk_b, [0.1, 0.2], source_id="s3", artifact_hash="h2")
+
+    import asyncio
+
+    asyncio.run(run())
+
+    assert connect_calls == 1
+
+
+def test_pgvector_aclose_releases_connection() -> None:
+    index = PgVectorIndex(dsn="postgresql://u@h/db")
+    conn = _Conn(index)
+    closed = False
+
+    async def close() -> None:
+        nonlocal closed
+        closed = True
+
+    conn.close = close  # type: ignore[method-assign]
+    _swap(index, conn)
+
+    async def run() -> None:
+        await index.reconcile("s3", {})
+        await index.aclose()
+
+    import asyncio
+
+    asyncio.run(run())
+
+    assert closed
+    assert index._connection is None
 
 
 def test_pgvector_reconcile_empty_source_clears_all() -> None:

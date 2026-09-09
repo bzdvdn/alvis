@@ -49,6 +49,7 @@ class HttpClient:
         self.transport = transport
         self.header_hook = header_hook
         self.max_bytes = max_bytes
+        self._async_client: httpx.AsyncClient | None = None
 
     def _headers(self, method: str, path: str, query: dict[str, Any] | None) -> dict[str, str]:
         headers = {"Accept": "application/json"}
@@ -106,50 +107,50 @@ class HttpClient:
     ) -> dict[str, Any] | bytes:
         """Perform a JSON request with retry/backoff; optionally return raw bytes."""
         url = self.base_url + path
-        async with self._client() as client:
-            for attempt in range(self.max_retries + 1):
-                try:
-                    resp = await client.request(
-                        method,
-                        url,
-                        params=query,
-                        json=payload,
-                        headers=self._headers(method, path, query),
-                        timeout=self.timeout,
-                    )
-                except httpx.RequestError as exc:
-                    if attempt >= self.max_retries:
-                        raise SourceError(
-                            f"{method} {url} failed after {self.max_retries} retries: {exc}"
-                        ) from exc
-                    await asyncio.sleep(self._delay(attempt, None, None))
-                    continue
-
-                if resp.status_code in RETRYABLE_STATUS:
-                    if attempt >= self.max_retries:
-                        raise SourceError(
-                            f"{method} {url} returned HTTP {resp.status_code} "
-                            f"after {self.max_retries} retries",
-                            status_code=resp.status_code,
-                        )
-                    await asyncio.sleep(
-                        self._delay(
-                            attempt,
-                            resp.status_code,
-                            resp.headers.get("Retry-After"),
-                        )
-                    )
-                    continue
-
-                if resp.status_code not in ok_status:
+        client = self._get_client()
+        for attempt in range(self.max_retries + 1):
+            try:
+                resp = await client.request(
+                    method,
+                    url,
+                    params=query,
+                    json=payload,
+                    headers=self._headers(method, path, query),
+                    timeout=self.timeout,
+                )
+            except httpx.RequestError as exc:
+                if attempt >= self.max_retries:
                     raise SourceError(
-                        f"{method} {url} returned HTTP {resp.status_code}",
+                        f"{method} {url} failed after {self.max_retries} retries: {exc}"
+                    ) from exc
+                await asyncio.sleep(self._delay(attempt, None, None))
+                continue
+
+            if resp.status_code in RETRYABLE_STATUS:
+                if attempt >= self.max_retries:
+                    raise SourceError(
+                        f"{method} {url} returned HTTP {resp.status_code} "
+                        f"after {self.max_retries} retries",
                         status_code=resp.status_code,
                     )
-                body = await self._read_capped(resp, method, url)
-                if raw:
-                    return body
-                return json.loads(body) if body else {}
+                await asyncio.sleep(
+                    self._delay(
+                        attempt,
+                        resp.status_code,
+                        resp.headers.get("Retry-After"),
+                    )
+                )
+                continue
+
+            if resp.status_code not in ok_status:
+                raise SourceError(
+                    f"{method} {url} returned HTTP {resp.status_code}",
+                    status_code=resp.status_code,
+                )
+            body = await self._read_capped(resp, method, url)
+            if raw:
+                return body
+            return json.loads(body) if body else {}
 
         return b"" if raw else {}
 
@@ -189,5 +190,20 @@ class HttpClient:
                     return max(0.0, time.mktime(parsed) - time.time())
         return backoff_delay(attempt, self.retry_backoff)
 
-    def _client(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(transport=self.transport, verify=self.verify)
+    def _get_client(self) -> httpx.AsyncClient:
+        """Lazily create and cache one client, reused across every request.
+
+        A fresh ``httpx.AsyncClient`` per request paid a new TCP/TLS handshake
+        every time; a shared client keeps connections pooled and alive across
+        the many sequential calls one pipeline run makes (paginated listings,
+        one call per chunk upserted, ...). Close it via :meth:`aclose`.
+        """
+        if self._async_client is None:
+            self._async_client = httpx.AsyncClient(transport=self.transport, verify=self.verify)
+        return self._async_client
+
+    async def aclose(self) -> None:
+        """Release the underlying connection pool, if one was ever opened."""
+        if self._async_client is not None:
+            await self._async_client.aclose()
+            self._async_client = None

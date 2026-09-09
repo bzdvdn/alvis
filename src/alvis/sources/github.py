@@ -55,6 +55,10 @@ class GitHubSource:
             max_bytes=max_bytes,
         )
 
+    async def aclose(self) -> None:
+        """Release the underlying HTTP connection pool."""
+        await self.client.aclose()
+
     async def list_documents(self) -> list[DocumentMeta]:
         """Fingerprint blobs from the tree listing (blob sha, no download)."""
         return [

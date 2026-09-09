@@ -157,6 +157,13 @@ class CachingEmbedder:
         if callable(closer):
             closer()
 
+    async def aclose(self) -> None:
+        """Release the file cache and the delegate's connection pool, if any."""
+        self.close()
+        delegate_closer = getattr(self.delegate, "aclose", None)
+        if callable(delegate_closer):
+            await delegate_closer()
+
 
 def cache_key(signature: str, text: str) -> str:
     """Stable cache key: model signature + content hash, never text verbatim."""

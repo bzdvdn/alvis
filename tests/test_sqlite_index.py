@@ -38,6 +38,26 @@ async def test_sqlite_upsert_and_search(tmp_path) -> None:
     assert await index.count() == 2
 
 
+async def test_sqlite_search_filters_by_metadata(tmp_path) -> None:
+    index = SqliteIndex(str(tmp_path / "db.sqlite"))
+    await index.upsert(
+        Chunk(text="eng doc", source_uri="u/eng", metadata={"space": "ENG"}),
+        [1.0, 0.0],
+        source_id="fs:.",
+        artifact_hash="h1",
+    )
+    await index.upsert(
+        Chunk(text="hr doc", source_uri="u/hr", metadata={"space": "HR"}),
+        [1.0, 0.0],
+        source_id="fs:.",
+        artifact_hash="h2",
+    )
+
+    hits = await index.search([1.0, 0.0], top_k=5, filters={"space": "HR"})
+
+    assert [hit.text for hit in hits] == ["hr doc"]
+
+
 async def test_sqlite_upsert_overwrites_identical_content(tmp_path) -> None:
     index = SqliteIndex(str(tmp_path / "db.sqlite"))
     await _upsert(index, text="same", uri="u", vector=[1.0, 0.0])

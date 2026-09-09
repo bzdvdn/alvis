@@ -91,6 +91,15 @@ class FetchStage(BaseStage):
     With a DocStore and a listing-capable source, unchanged documents are
     skipped from their listing data alone and only the changed bodies are
     downloaded. Otherwise the source's full ``fetch()`` is used.
+
+    A source config's ``acl`` (a static list of principal strings) is
+    stamped onto every fetched artifact's metadata here — the one place
+    every source's output passes through, built-in or plugin — so it flows
+    into chunk metadata (see :class:`ExtractStage`) and on to the index's
+    ``__acl`` system field, regardless of which connector produced the
+    artifact. A connector-supplied ``metadata["acl"]`` (a future connector
+    that reads real per-document permissions) always wins over this static
+    default.
     """
 
     name = "fetch"
@@ -129,6 +138,14 @@ class FetchStage(BaseStage):
             raise PipelineError(
                 f"source '{ctx.config.source.type}' failed: {exc}"
             ) from exc
+        acl = ctx.config.source.config.get("acl")
+        if acl:
+            ctx.artifacts = [
+                artifact
+                if "acl" in artifact.metadata
+                else artifact.model_copy(update={"metadata": {**artifact.metadata, "acl": acl}})
+                for artifact in ctx.artifacts
+            ]
 
 
 class ExtractStage(BaseStage):
@@ -209,7 +226,13 @@ class EmbedStage(BaseStage):
 
 
 class UpsertStage(BaseStage):
-    """Write the run's vectors to the index."""
+    """Write the run's vectors to the index.
+
+    Uses the indexer's ``upsert_batch`` (see
+    :class:`alvis.index.base.BatchIndexer`) when it has one — fewer round
+    trips than one ``upsert`` call per chunk — falling back to the
+    per-chunk loop otherwise.
+    """
 
     name = "upsert"
 
@@ -219,7 +242,15 @@ class UpsertStage(BaseStage):
     async def run(self, ctx: RunContext) -> None:
         indexer = ctx.indexer
         assert indexer is not None, "UpsertStage ran without an indexer"
-        for (chunk, artifact_hash), vector in zip(ctx.pending, ctx.vectors, strict=True):
+        items = [
+            (chunk, vector, artifact_hash)
+            for (chunk, artifact_hash), vector in zip(ctx.pending, ctx.vectors, strict=True)
+        ]
+        upsert_batch = getattr(indexer, "upsert_batch", None)
+        if callable(upsert_batch):
+            await upsert_batch(items, source_id=ctx.source_id)
+            return
+        for chunk, vector, artifact_hash in items:
             await indexer.upsert(
                 chunk,
                 vector,

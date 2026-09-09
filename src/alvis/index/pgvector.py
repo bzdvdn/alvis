@@ -7,13 +7,22 @@ database must have it installed (``CREATE EXTENSION vector``).
 Point IDs are deterministic uuids (see ``point_id``), so ``UPSERT``
 overwrites identical content instead of accumulating; ``reconcile`` prunes
 this source's rows whose ``artifact_hash`` no longer matches the latest run.
+
+One connection is opened lazily and reused for the lifetime of the index
+(autocommit, so no per-statement transaction bookkeeping) — the previous
+"connect, run one statement, disconnect" pattern meant one full TCP+auth
+round trip *per chunk* on a large ingestion run. An ``asyncio.Lock`` guards
+it, since a single ``psycopg`` connection isn't safe for concurrent use;
+call :meth:`PgVectorIndex.aclose` when done with the index (a fresh
+``run()``/``query()`` call does this for you).
 """
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from types import ModuleType
 from typing import Any
 
@@ -59,13 +68,29 @@ class PgVectorIndex:
         self.dsn = dsn
         self.table = table
         self._dimensions: int | None = None
+        self._connection: Any | None = None
+        self._connection_lock = asyncio.Lock()
 
     async def _connect(self) -> Any:
         if not _PSYCOPG:
             raise ValueError(f"pgvector requires psycopg ({_PGINDEX_EXTRA})")
         import psycopg
 
-        return await psycopg.AsyncConnection.connect(self.dsn)
+        return await psycopg.AsyncConnection.connect(self.dsn, autocommit=True)
+
+    async def _get_connection(self) -> Any:
+        """Return the shared connection, (re)connecting if needed."""
+        async with self._connection_lock:
+            if self._connection is None or self._connection.closed:
+                self._connection = await self._connect()
+            return self._connection
+
+    async def aclose(self) -> None:
+        """Close the shared connection, if one was ever opened."""
+        async with self._connection_lock:
+            if self._connection is not None and not self._connection.closed:
+                await self._connection.close()
+            self._connection = None
 
     def _table(self) -> Any:
         return _psql().Identifier(self.table)
@@ -78,11 +103,9 @@ class PgVectorIndex:
                 f"pgvector table {self.table!r} is {self._dimensions}-dimensional, "
                 f"but a {dimensions}-dimensional vector arrived"
             )
-        create = _psql().SQL(
-            "CREATE EXTENSION IF NOT EXISTS vector"
-        )
-        async with await self._connect() as connection:
-            await connection.execute(create)
+        connection = await self._get_connection()
+        create = _psql().SQL("CREATE EXTENSION IF NOT EXISTS vector")
+        await connection.execute(create)
         create = _psql().SQL(
             "CREATE TABLE IF NOT EXISTS {} ("
             "id text PRIMARY KEY, "
@@ -94,8 +117,7 @@ class PgVectorIndex:
             "metadata jsonb NOT NULL DEFAULT '{{}}'"
             ")"
         ).format(self._table(), _psql().Literal(dimensions))
-        async with await self._connect() as connection:
-            await connection.execute(create)
+        await connection.execute(create)
 
     async def upsert(
         self,
@@ -120,19 +142,19 @@ class PgVectorIndex:
         ).format(self._table())
         vector_literal = _vector_literal(vector)
         metadata = json.dumps(chunk.metadata)
-        async with await self._connect() as connection:
-            await connection.execute(
-                statement,
-                (
-                    str(point_id(chunk.source_uri, chunk.text)),
-                    chunk.source_uri,
-                    chunk.text,
-                    source_id,
-                    artifact_hash,
-                    vector_literal,
-                    metadata,
-                ),
-            )
+        connection = await self._get_connection()
+        await connection.execute(
+            statement,
+            (
+                str(point_id(chunk.source_uri, chunk.text)),
+                chunk.source_uri,
+                chunk.text,
+                source_id,
+                artifact_hash,
+                vector_literal,
+                metadata,
+            ),
+        )
 
     async def reconcile(
         self,
@@ -156,32 +178,61 @@ class PgVectorIndex:
                 self._table()
             )
             params = (source_id,)
-        async with await self._connect() as connection:
-            await connection.execute(delete, params)
+        connection = await self._get_connection()
+        await connection.execute(delete, params)
 
     async def count(self) -> int:
         """Total rows in the table (for ``alvis status``)."""
         statement = _psql().SQL("SELECT count(*) FROM {}").format(self._table())
-        async with await self._connect() as connection:
-            cursor = await connection.execute(statement)
-            row = await cursor.fetchone()
+        connection = await self._get_connection()
+        cursor = await connection.execute(statement)
+        row = await cursor.fetchone()
         return int(row[0]) if row and row[0] is not None else 0
 
-    async def search(self, vector: list[float], *, top_k: int = 5) -> list[SearchHit]:
+    async def search(
+        self,
+        vector: list[float],
+        *,
+        top_k: int = 5,
+        filters: Mapping[str, str] | None = None,
+        principals: Sequence[str] | None = None,
+    ) -> list[SearchHit]:
         """Nearest-neighbour search via cosine distance ``<=>``, best first.
 
         Score is ``1 - cosine_distance`` (cosine similarity). psycopg does not
         serialise floats into the ``vector`` cast, so the literal is inlined.
+        ``filters`` becomes a ``metadata @> %s::jsonb`` containment check.
+        ``principals``, when given, additionally requires a row to have no
+        ``acl`` metadata (public) or an ``acl`` array that overlaps
+        ``principals`` (jsonb ``?|``) — both applied server-side before
+        ranking.
         """
+        literal = _vector_literal(vector)
+        conditions: list[Any] = []
+        params: list[object] = [literal]
+        if filters:
+            conditions.append(_psql().SQL("metadata @> %s::jsonb"))
+            params.append(json.dumps(dict(filters)))
+        if principals is not None:
+            conditions.append(
+                _psql().SQL(
+                    "(NOT (metadata ? 'acl') OR jsonb_array_length(metadata->'acl') = 0 "
+                    "OR metadata->'acl' ?| %s::text[])"
+                )
+            )
+            params.append(list(principals))
+        where = _psql().SQL("")
+        if conditions:
+            where = _psql().SQL("WHERE {}").format(_psql().SQL(" AND ").join(conditions))
+        params.append(literal)
         statement = _psql().SQL(
             "SELECT text, source_uri, metadata, "
             "1 - (embedding <=> %s::vector) AS score "
-            "FROM {} ORDER BY embedding <=> %s::vector LIMIT %s"
-        ).format(self._table())
-        literal = _vector_literal(vector)
-        async with await self._connect() as connection:
-            cursor = await connection.execute(statement, (literal, literal, top_k))
-            rows = await cursor.fetchall()
+            "FROM {} {} ORDER BY embedding <=> %s::vector LIMIT %s"
+        ).format(self._table(), where)
+        connection = await self._get_connection()
+        cursor = await connection.execute(statement, (*params, top_k))
+        rows = await cursor.fetchall()
         return [
             SearchHit(
                 text=row[0],

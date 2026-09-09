@@ -290,13 +290,24 @@ pipeline.yaml: 12 documents, 87 chunks indexed
 
 ### Indexes
 
-- `qdrant` — Qdrant vector store (`url`, `collection`).
+- `qdrant` — Qdrant vector store (`url`, `collection`). Upserts batch many
+  chunks into one request instead of one per chunk (see `alvis.index.base.
+  BatchIndexer`), and the HTTP connection pool is reused across the run.
 - `pgvector` — PostgreSQL + pgvector column
   (`dsn` / `dsn_env`, `table`, requires `pip install alvis[pgindex]`).
   See `examples/pgvector.yaml` and the `postgres` service in docker-compose.
+  One connection is opened lazily and reused for the index's lifetime
+  (autocommit) rather than reconnecting per statement.
 - `sqlite` — persistent single-file store (`path`), no extra dependencies; a
   chroma-style dev backend that survives restarts. `alvis init --index sqlite`.
 - `memory` — in-memory store for tests and prototypes.
+
+All HTTP-backed adapters (`qdrant`, every source, the `openai` embedder,
+`--answer`'s LLM client) share one pooled `httpx.AsyncClient` per instance
+instead of opening a new connection per request; a source/indexer built
+internally by `run`/`query`/`eval` is closed automatically when the call
+returns, so long-running `--watch` loops don't leak connections tick over
+tick.
 
 ### Retrieval
 
@@ -305,6 +316,39 @@ with the config's embedder and searched nearest-neighbour:
 
 ```bash
 alvis query examples/pgvector.yaml --text "how do I install alvis?" --top-k 5
+```
+
+`--filter key=value` (repeatable) restricts candidates to metadata matching
+every pair — e.g. scope a query to one Confluence space or GitLab project
+before ranking:
+
+```bash
+alvis query examples/pgvector.yaml --text "how do I install alvis?" --filter space=ENG
+```
+
+`--principal name` (repeatable) is the caller's identity for ACL enforcement:
+excludes chunks whose source declared an `acl` (see below) that doesn't
+include any given principal. Omit it for no ACL filtering at all — see
+[ACL-aware retrieval](#acl-aware-retrieval).
+
+`--hybrid` fuses the dense ranking with a BM25 keyword search over the same
+text (Reciprocal Rank Fusion) — catches exact terms (IDs, acronyms) a dense
+vector alone can miss. Supported on `memory`/`sqlite` indexes today; other
+backends fall back to dense-only (logged, not an error):
+
+```bash
+alvis query examples/sqlite.yaml --text "ERR-4471 retry policy" --hybrid
+```
+
+`--rerank` reorders the retrieved candidates by relevance via an LLM chat
+call before truncating to `--top-k` — no local cross-encoder model needed,
+it reuses the same OpenAI-compatible chat contract as `--answer`
+(`--rerank-base-url/--rerank-model/--rerank-api-token-env`). Fails soft: a
+missing API key skips reranking with a warning, and a failed or unparseable
+model response falls back to the original order — never an error:
+
+```bash
+alvis query examples/pgvector.yaml --text "how do I install alvis?" --rerank
 ```
 
 `--answer` synthesizes a cited answer over the top hits instead of just
@@ -319,10 +363,16 @@ alvis query examples/pgvector.yaml --text "how do I install alvis?" --answer
 Programmatically (same contract as ingestion):
 
 ```python
-from alvis import query, query_async, answer, answer_async, Synthesizer
+from alvis import query, query_async, answer, answer_async, Synthesizer, LLMReranker
 
 hits = query("examples/pgvector.yaml", "how do I install alvis?", top_k=5)
 await query_async("examples/pgvector.yaml", "how do I install alvis?")
+query("examples/pgvector.yaml", "how do I install alvis?", filters={"space": "ENG"})
+
+# LLM-based rerank over the retrieved candidates (fails soft, never raises)
+reranker = LLMReranker(base_url="https://api.openai.com/v1", model="gpt-4o-mini",
+                       api_token_env="OPENAI_API_KEY")
+query("examples/pgvector.yaml", "how do I install alvis?", rerank=reranker)
 
 # cited answer over the hits, with an explicit LLM client
 llm = Synthesizer(base_url="https://api.openai.com/v1", model="gpt-4o-mini",
@@ -335,6 +385,19 @@ result.citations                 # [Citation(index=1, source_uri=..., ...)]
 `SearchHit` carries `text`, `source_uri`, `metadata`, and a cosine `score`
 (best first). For in-memory indexes pass the same `indexer` instance to
 `run`/`query` (persistent backends rebuild their clients from config).
+
+#### Evaluating retrieval quality
+
+`alvis eval` scores whether queries actually surface the right document —
+no LLM required:
+
+```bash
+alvis run examples/eval-pipeline.yaml
+alvis eval examples/eval-pipeline.yaml examples/eval-cases.yaml --min-hit-rate 0.9
+```
+
+See [docs/evaluation.md](docs/evaluation.md) for the case format, metrics
+(hit rate, MRR), and the programmatic `alvis.evaluate`/`evaluate_async` API.
 
 ## Embedding in your application
 
@@ -407,6 +470,7 @@ incremental skip, and the per-source `reconcile` pass:
 | `__source`       | source identity, namespaces the `reconcile` prune                   |
 | `__hash`         | content hash, powers skip-unchanged and prune                       |
 | `__document_id`  | stable document identity for citations/per-doc rules                |
+| `__acl`           | list of principal strings gating visibility (see ACL below)         |
 | `__schema`       | payload schema version (currently 1)                                |
 
 Everything else is your namespace: metadata is written verbatim and returned
@@ -418,6 +482,37 @@ promoted to `__document_id`; sources with a natural stable id declare it
 place instead of replacing it. Collections indexed before this contract store
 the old flat keys — drop the collection once and re-run `alvis run` to
 rebuild under the versioned schema.
+
+#### ACL-aware retrieval
+
+Any source config accepts `acl: [principal, ...]` — a static list of
+principal strings (user ids, group names, ...) stamped onto every artifact
+that source fetches, promoted to `__acl` at index time:
+
+```yaml
+pipeline:
+  source:
+    type: fs
+    config:
+      path: ./internal-docs
+      acl: ["eng", "ops"]
+  index:
+    type: qdrant
+```
+
+`alvis query --principal eng` (repeatable) then only returns chunks with no
+`acl` (public) or an `acl` that overlaps the given principals — enforced
+server-side on `qdrant`/`pgvector`, in Python on `memory`/`sqlite`. Omit
+`--principal` entirely and no ACL filtering happens at all — it's opt-in,
+not a wall you have to work around while testing. Changing a source's `acl`
+invalidates `--incremental` state for that source (it's part of the pipeline
+signature), so the new principals actually take effect on the next run
+rather than only on newly-changed documents.
+
+This is a static per-source tag, not live per-document permissions from the
+origin system (no connector fetches those today) — a future connector can
+still set a per-chunk `acl` in extracted metadata, which always wins over
+the source-level default.
 
 #### Incremental ingestion
 
@@ -482,6 +577,7 @@ the latter only against trusted internal endpoints).
 - [Operations](docs/status.md) — `alvis status`, metrics endpoint, `.env` loading, `init` templates, dashboards
 - [Versioning & deprecation](docs/versioning.md) — semver, stable surface, deprecation window
 - [Python DSL guide](docs/dsl.md) — describing pipelines from code
+- [Retrieval evaluation](docs/evaluation.md) — hit rate / MRR harness, `alvis eval`
 - [Constitution](CONSTITUTION.md) — purpose, scope, open-source strategy
 - [Roadmap](ROADMAP.md) — build plan
 

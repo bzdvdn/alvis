@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import alvis.observability as ob
+from alvis._lifecycle import aclose_quietly
 from alvis.config import ConfigError, PipelineConfig, load_config
 from alvis.docstore import DocStore, RunRecord
 from alvis.factories import (
@@ -49,6 +50,9 @@ def pipeline_signature(config: PipelineConfig) -> str:
     Incremental state is stored per (source, signature): the moment extract /
     chunk / embed settings change, stored fingerprints are treated as stale
     and the whole source is reprocessed — never silently left un-re-chunked.
+    ``source.acl`` is included too: changing a source's static ACL must
+    reprocess every document so the new principals actually take effect,
+    not just newly-changed ones.
     """
     payload: dict[str, object] = {
         "extract": config.extract.strategy,
@@ -61,6 +65,7 @@ def pipeline_signature(config: PipelineConfig) -> str:
         },
         "embed_type": config.embed.type,
         "embed_model": config.embed.config.get("model"),
+        "source_acl": config.source.config.get("acl"),
     }
     return hashlib.sha256(
         json.dumps(payload, sort_keys=True).encode("utf-8")
@@ -264,24 +269,36 @@ class PipelineEngine:
         (:mod:`alvis.pipeline.stages`) then share a single :class:`RunContext`
         and run in a fixed order, each timed as its own ``pipeline_stage_seconds
         stage=<name>`` sample.
+
+        The source, extractor-side embedder, and (when built here rather
+        than injected by the caller) the indexer each get an async
+        connection-pool cleanup pass afterwards, success or failure — a
+        fresh adapter is built per run, so leaving its client open would
+        leak a connection every run (most visibly under ``--watch``).
         """
         ctx = self._build_context(docstore)
-        for stage in STAGES:
-            if stage.applicable(ctx):
-                with ob.timer(
-                    "pipeline_stage_seconds",
-                    labels=ctx.stage_labels(stage.name),
-                ):
-                    await stage.run(ctx)
-        return PipelineResult(
-            documents_ingested=ctx.documents,
-            chunks_indexed=ctx.indexed,
-            embed_cache_hits=ctx.embed_cache_hits,
-            embed_cache_misses=ctx.embed_cache_misses,
-            documents_changed=ctx.changed,
-            documents_skipped=ctx.skipped,
-            documents_deleted=ctx.deleted,
-        )
+        try:
+            for stage in STAGES:
+                if stage.applicable(ctx):
+                    with ob.timer(
+                        "pipeline_stage_seconds",
+                        labels=ctx.stage_labels(stage.name),
+                    ):
+                        await stage.run(ctx)
+            return PipelineResult(
+                documents_ingested=ctx.documents,
+                chunks_indexed=ctx.indexed,
+                embed_cache_hits=ctx.embed_cache_hits,
+                embed_cache_misses=ctx.embed_cache_misses,
+                documents_changed=ctx.changed,
+                documents_skipped=ctx.skipped,
+                documents_deleted=ctx.deleted,
+            )
+        finally:
+            await aclose_quietly(ctx.source)
+            await aclose_quietly(ctx.embedder)
+            if self._indexer is None and ctx.indexer is not None:
+                await aclose_quietly(ctx.indexer)
 
     def _build_context(self, docstore: DocStore | None) -> RunContext:
         """Validate the config and wire the adapters into a fresh :class:`RunContext`."""

@@ -19,9 +19,10 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
 from pathlib import Path
 
+from alvis._lifecycle import aclose_quietly
 from alvis.answer import Answer, Synthesizer, citation_answer
 from alvis.config import ConfigError, PipelineConfig, load_config
 from alvis.core.models import Chunk, SearchHit
@@ -29,8 +30,10 @@ from alvis.docstore import DocStore
 from alvis.errors import PipelineError
 from alvis.factories import build_embedder, build_indexer, source_identity
 from alvis.index.base import Indexer
+from alvis.index.fusion import reciprocal_rank_fusion
 from alvis.observability import LOG
 from alvis.pipeline.engine import PipelineEngine, PipelineResult
+from alvis.rerank import LLMReranker
 from alvis.sources.base import SourceError
 
 ConfigLike = str | Path | PipelineConfig
@@ -106,12 +109,27 @@ def describe(config: ConfigLike) -> str:
     return PipelineEngine(_load(config)).describe()
 
 
+_CANDIDATE_FACTOR = 4
+"""Over-fetch this many times ``top_k`` candidates when hybrid fusion or
+reranking will narrow the list afterwards.
+
+RRF needs candidates from *both* rankers to find their overlap, and a
+reranker needs a wider net to pick a better top-``top_k`` than the dense
+ranking alone would offer — a ranker's own top-``top_k`` straight through
+would starve either step of the signal that makes it worth doing.
+"""
+
+
 async def query_async(
     config: ConfigLike,
     text: str,
     *,
     top_k: int = 5,
     indexer: Indexer | None = None,
+    filters: Mapping[str, str] | None = None,
+    hybrid: bool = False,
+    rerank: LLMReranker | None = None,
+    principals: Sequence[str] | None = None,
 ) -> list[SearchHit]:
     """Retrieve the chunks closest to ``text`` from the configured index.
 
@@ -119,17 +137,76 @@ async def query_async(
     embedded with the config's embedder, then searched like any chunk. When
     querying an in-memory index, pass the same ``indexer`` instance that
     produced the data (other backends re-build their client from config).
+    ``filters`` restricts candidates to metadata matching every ``key: value``
+    pair (exact equality) before ranking — e.g. ``{"space": "ENG"}``.
+
+    ``hybrid=True`` additionally runs a BM25 keyword search over the same
+    text and fuses it with the dense ranking (Reciprocal Rank Fusion) —
+    catches exact terms (IDs, acronyms) dense vectors sometimes miss. Only
+    backends that keep full text locally (``memory``, ``sqlite``) support
+    this; on others it degrades to vector-only search (logged, not an
+    error) — see :class:`alvis.index.base.KeywordIndexer`.
+
+    ``rerank``, when given an :class:`alvis.rerank.LLMReranker`, reorders
+    the (dense or hybrid-fused) candidates by relevance via an LLM chat call
+    before truncating to ``top_k`` — fails soft to the original order on any
+    error, so a flaky reranker never turns a working query into a failed one.
+
+    ``principals`` is the caller's identity (user id, group names, ...);
+    when given, a chunk whose source declared an ``acl`` is excluded unless
+    ``principals`` intersects it — a chunk with no ``acl`` is always visible.
+    Omit it (the default) to search with no ACL enforcement at all. See
+    :meth:`alvis.index.base.Indexer.search`.
+
+    The embedder is always built fresh here and closed before returning;
+    the indexer is closed too, but only when this call built it itself (an
+    ``indexer`` you pass in is yours to keep using — e.g. across repeated
+    queries against a shared in-memory index). ``rerank`` is never closed
+    here — it's yours to reuse or close.
     """
     cfg = _load(config)
     if not text.strip():
         raise ConfigError("query text must not be empty")
     embedder = build_embedder(cfg.embed, enable_cache=False)
+    owns_indexer = indexer is None
     if indexer is None:
         if cfg.index is None:
             raise ConfigError("query requires an 'index' stage in the config")
         indexer = build_indexer(cfg.index)
-    vector = await embedder.embed(Chunk(text=text, source_uri="alvis:query"))
-    return await indexer.search(vector, top_k=top_k)
+    try:
+        vector = await embedder.embed(Chunk(text=text, source_uri="alvis:query"))
+        over_fetch = hybrid or rerank is not None
+        candidate_k = top_k * _CANDIDATE_FACTOR if over_fetch else top_k
+
+        if not hybrid:
+            hits = await indexer.search(
+                vector, top_k=candidate_k, filters=filters, principals=principals
+            )
+        else:
+            dense_hits = await indexer.search(
+                vector, top_k=candidate_k, filters=filters, principals=principals
+            )
+            keyword_search = getattr(indexer, "keyword_search", None)
+            if keyword_search is None:
+                LOG.warning(
+                    "hybrid search requested but %s has no keyword_search; "
+                    "falling back to dense-only",
+                    type(indexer).__name__,
+                )
+                hits = dense_hits
+            else:
+                keyword_hits = await keyword_search(
+                    text, top_k=candidate_k, filters=filters, principals=principals
+                )
+                hits = reciprocal_rank_fusion(dense_hits, keyword_hits)
+
+        if rerank is not None:
+            return await rerank.rerank(text, hits, top_k=top_k)
+        return hits[:top_k]
+    finally:
+        await aclose_quietly(embedder)
+        if owns_indexer:
+            await aclose_quietly(indexer)
 
 
 def query(
@@ -138,9 +215,24 @@ def query(
     *,
     top_k: int = 5,
     indexer: Indexer | None = None,
+    filters: Mapping[str, str] | None = None,
+    hybrid: bool = False,
+    rerank: LLMReranker | None = None,
+    principals: Sequence[str] | None = None,
 ) -> list[SearchHit]:
     """Synchronous variant of :func:`query_async`."""
-    return asyncio.run(query_async(config, text, top_k=top_k, indexer=indexer))
+    return asyncio.run(
+        query_async(
+            config,
+            text,
+            top_k=top_k,
+            indexer=indexer,
+            filters=filters,
+            hybrid=hybrid,
+            rerank=rerank,
+            principals=principals,
+        )
+    )
 
 
 async def answer_async(
@@ -150,6 +242,10 @@ async def answer_async(
     top_k: int = 5,
     indexer: Indexer | None = None,
     llm: Synthesizer | None = None,
+    filters: Mapping[str, str] | None = None,
+    hybrid: bool = False,
+    rerank: LLMReranker | None = None,
+    principals: Sequence[str] | None = None,
 ) -> Answer:
     """Retrieve the closest chunks and synthesize a cited answer.
 
@@ -157,9 +253,19 @@ async def answer_async(
     answers with ``[N]`` citations tied to ``SearchHit.source_uri``. Without
     an LLM (or if the call fails), falls back to numbering the excerpts
     itself, so answering is possible with the ``default`` embedder and no
-    API key.
+    API key. ``filters``, ``hybrid``, ``rerank``, and ``principals``
+    narrow/blend/reorder/scope retrieval as in :func:`query_async`.
     """
-    hits = await query_async(config, text, top_k=top_k, indexer=indexer)
+    hits = await query_async(
+        config,
+        text,
+        top_k=top_k,
+        indexer=indexer,
+        filters=filters,
+        hybrid=hybrid,
+        rerank=rerank,
+        principals=principals,
+    )
     if llm is None:
         return citation_answer(text, hits)
     try:
@@ -175,9 +281,25 @@ def answer(
     top_k: int = 5,
     indexer: Indexer | None = None,
     llm: Synthesizer | None = None,
+    filters: Mapping[str, str] | None = None,
+    hybrid: bool = False,
+    rerank: LLMReranker | None = None,
+    principals: Sequence[str] | None = None,
 ) -> Answer:
     """Synchronous variant of :func:`answer_async`."""
-    return asyncio.run(answer_async(config, text, top_k=top_k, indexer=indexer, llm=llm))
+    return asyncio.run(
+        answer_async(
+            config,
+            text,
+            top_k=top_k,
+            indexer=indexer,
+            llm=llm,
+            filters=filters,
+            hybrid=hybrid,
+            rerank=rerank,
+            principals=principals,
+        )
+    )
 
 
 def run_many(

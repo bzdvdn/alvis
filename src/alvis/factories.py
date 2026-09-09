@@ -66,19 +66,26 @@ def build_source(
     *,
     max_bytes: int | None = None,
 ) -> Source:
-    """Build the source adapter declared by ``config``."""
+    """Build the source adapter declared by ``config``.
+
+    ``acl`` (if present in ``config.config``) is a reserved key read
+    directly by :class:`alvis.pipeline.stages.FetchStage` to stamp every
+    artifact's metadata — it is never passed to a built-in source's
+    constructor.
+    """
+    settings = {key: value for key, value in config.config.items() if key != "acl"}
     if config.type == "fs":
-        return FilesystemSource(**config.config, max_bytes=max_bytes)
+        return FilesystemSource(**settings, max_bytes=max_bytes)
     if config.type == "confluence":
-        return ConfluenceSource(**config.config)
+        return ConfluenceSource(**settings)
     if config.type == "github":
-        return GitHubSource(**config.config, max_bytes=max_bytes)
+        return GitHubSource(**settings, max_bytes=max_bytes)
     if config.type == "gitlab":
-        return GitLabSource(**config.config, max_bytes=max_bytes)
+        return GitLabSource(**settings, max_bytes=max_bytes)
     if config.type == "s3":
-        return S3Source(**config.config, max_bytes=max_bytes)
+        return S3Source(**settings, max_bytes=max_bytes)
     if config.type == "static_url":
-        return StaticUrlSource(**config.config, max_bytes=max_bytes)
+        return StaticUrlSource(**settings, max_bytes=max_bytes)
     plugin_factory = registry().factory("source", config.type)
     if plugin_factory is not None:
         return plugin_factory(config=config, max_bytes=max_bytes)  # type: ignore[return-value]

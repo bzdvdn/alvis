@@ -48,6 +48,10 @@ class ApiEmbedder:
         )
         self.signature = f"openai:{model}"
 
+    async def aclose(self) -> None:
+        """Release the underlying HTTP connection pool."""
+        await self.client.aclose()
+
     async def embed(self, chunk: Chunk) -> list[float]:
         """Embed a single chunk (result of :meth:`embed_batch` on ``[chunk]``)."""
         return (await self.embed_batch([chunk]))[0]

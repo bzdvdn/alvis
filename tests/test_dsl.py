@@ -23,6 +23,29 @@ def test_fs_dsl_matches_yaml(tmp_path: Path) -> None:
     assert cfg == load_config(yaml_path)
 
 
+def test_fs_dsl_acl_matches_yaml(tmp_path: Path) -> None:
+    cfg = dsl.pipeline(dsl.fs(str(tmp_path), acl=["eng"]), index=dsl.memory())
+    yaml_path = tmp_path / "p.yaml"
+    yaml_path.write_text(
+        "pipeline:\n"
+        "  source:\n"
+        "    type: fs\n"
+        "    config:\n"
+        f"      path: {tmp_path}\n"
+        "      acl: [eng]\n"
+        "  index:\n"
+        "    type: memory\n",
+        encoding="utf-8",
+    )
+    assert cfg == load_config(yaml_path)
+    assert cfg.source.config["acl"] == ["eng"]
+
+
+def test_fs_dsl_omits_acl_when_not_given(tmp_path: Path) -> None:
+    cfg = dsl.fs(str(tmp_path))
+    assert "acl" not in cfg.config
+
+
 def test_s3_dsl_populates_config() -> None:
     cfg = dsl.s3(
         url="http://localhost:9000",

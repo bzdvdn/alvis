@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 from alvis.core.ids import point_id
 from alvis.core.models import Chunk, SearchHit
@@ -10,6 +10,9 @@ from alvis.sources.base import SourceError
 from alvis.sources.http import HttpClient
 
 _SCROLL_LIMIT = 100
+_UPSERT_BATCH_SIZE = 100
+"""Points per PUT in :meth:`QdrantIndex.upsert_batch` — keeps individual
+requests bounded regardless of how many chunks a run has pending."""
 
 #: Reserved payload namespace — keys beginning with ``__`` are owned by the
 #: engine and drive dedup, incremental skip, and per-source reconcile. User
@@ -19,6 +22,7 @@ _PAYLOAD_URI = "__uri"
 _PAYLOAD_SOURCE = "__source"
 _PAYLOAD_HASH = "__hash"
 _PAYLOAD_DOCUMENT_ID = "__document_id"
+_PAYLOAD_ACL = "__acl"
 _PAYLOAD_SCHEMA = "__schema"
 _PAYLOAD_SCHEMA_VERSION = 1
 _SYSTEM_PREFIX = "__"
@@ -70,6 +74,10 @@ class QdrantIndex:
             verify=verify,
         )
 
+    async def aclose(self) -> None:
+        """Release the underlying HTTP connection pool."""
+        await self.client.aclose()
+
     async def upsert(
         self,
         chunk: Chunk,
@@ -79,27 +87,59 @@ class QdrantIndex:
         artifact_hash: str,
     ) -> None:
         """Upsert a chunk point, creating the collection on demand."""
-        self._validate_metadata(chunk.metadata)
-        await self._ensure_collection(len(vector))
-        point = {
+        await self.upsert_batch([(chunk, vector, artifact_hash)], source_id=source_id)
+
+    async def upsert_batch(
+        self,
+        items: Sequence[tuple[Chunk, list[float], str]],
+        *,
+        source_id: str,
+    ) -> None:
+        """Upsert many chunk points in as few requests as possible.
+
+        One HTTP round trip per :data:`_UPSERT_BATCH_SIZE` points instead of
+        one per point — the per-chunk ``upsert`` loop the engine would
+        otherwise run pays a full request for every single chunk.
+        """
+        if not items:
+            return
+        for chunk, _, _ in items:
+            self._validate_metadata(chunk.metadata)
+        await self._ensure_collection(len(items[0][1]))
+        points = [
+            self._point(chunk, vector, source_id, artifact_hash)
+            for chunk, vector, artifact_hash in items
+        ]
+        for start in range(0, len(points), _UPSERT_BATCH_SIZE):
+            batch = points[start : start + _UPSERT_BATCH_SIZE]
+            await self.client.request(
+                "PUT",
+                f"/collections/{self.collection}/points",
+                query={"wait": "true"},
+                payload={"points": batch},
+            )
+
+    @staticmethod
+    def _point(
+        chunk: Chunk, vector: list[float], source_id: str, artifact_hash: str
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {
+            _PAYLOAD_TEXT: chunk.text,
+            _PAYLOAD_URI: chunk.source_uri,
+            _PAYLOAD_SOURCE: source_id,
+            _PAYLOAD_HASH: artifact_hash,
+            _PAYLOAD_DOCUMENT_ID: _document_identity(chunk),
+            _PAYLOAD_SCHEMA: _PAYLOAD_SCHEMA_VERSION,
+            **chunk.metadata,
+        }
+        acl = chunk.metadata.get("acl")
+        if acl:
+            payload[_PAYLOAD_ACL] = [str(principal) for principal in acl]
+        return {
             "id": str(point_id(chunk.source_uri, chunk.text)),
             "vector": vector,
-            "payload": {
-                _PAYLOAD_TEXT: chunk.text,
-                _PAYLOAD_URI: chunk.source_uri,
-                _PAYLOAD_SOURCE: source_id,
-                _PAYLOAD_HASH: artifact_hash,
-                _PAYLOAD_DOCUMENT_ID: _document_identity(chunk),
-                _PAYLOAD_SCHEMA: _PAYLOAD_SCHEMA_VERSION,
-                **chunk.metadata,
-            },
+            "payload": payload,
         }
-        await self.client.request(
-            "PUT",
-            f"/collections/{self.collection}/points",
-            query={"wait": "true"},
-            payload={"points": [point]},
-        )
 
     @staticmethod
     def _validate_metadata(metadata: Mapping[str, object]) -> None:
@@ -153,19 +193,45 @@ class QdrantIndex:
                 payload={"points": stale_ids},
             )
 
-    async def search(self, vector: list[float], *, top_k: int = 5) -> list[SearchHit]:
+    async def search(
+        self,
+        vector: list[float],
+        *,
+        top_k: int = 5,
+        filters: Mapping[str, str] | None = None,
+        principals: Sequence[str] | None = None,
+    ) -> list[SearchHit]:
         """Nearest-neighbour search; scores are cosine similarities.
 
         The collection must already exist (created by an ingestion run).
+        ``filters`` is translated into a Qdrant ``must`` match filter, applied
+        server-side before ranking. ``principals``, when given, additionally
+        requires a point to have no ``__acl`` (public) or an ``__acl`` that
+        overlaps ``principals`` — evaluated server-side too.
         """
+        payload: dict[str, object] = {
+            "vector": vector,
+            "limit": top_k,
+            "with_payload": True,
+        }
+        must: list[dict[str, object]] = [
+            {"key": key, "match": {"value": value}} for key, value in (filters or {}).items()
+        ]
+        if principals is not None:
+            must.append(
+                {
+                    "should": [
+                        {"is_empty": {"key": _PAYLOAD_ACL}},
+                        {"key": _PAYLOAD_ACL, "match": {"any": list(principals)}},
+                    ]
+                }
+            )
+        if must:
+            payload["filter"] = {"must": must}
         response = await self.client.request(
             "POST",
             f"/collections/{self.collection}/points/search",
-            payload={
-                "vector": vector,
-                "limit": top_k,
-                "with_payload": True,
-            },
+            payload=payload,
         )
         return [
             SearchHit(

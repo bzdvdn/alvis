@@ -71,6 +71,12 @@ class StaticUrlSource:
         self.max_bytes = max_bytes
         self._client: httpx.AsyncClient | None = None
 
+    async def aclose(self) -> None:
+        """Release the underlying HTTP connection pool, if one was ever opened."""
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+
     async def list_documents(self) -> list[DocumentMeta]:
         """Fingerprint every URL without downloading unchanged bodies."""
         metas: list[DocumentMeta] = []

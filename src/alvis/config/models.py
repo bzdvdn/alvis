@@ -22,10 +22,26 @@ class _Stage(BaseModel):
 
 
 class SourceConfig(_Stage):
-    """A source adapter (filesystem, Confluence, GitHub, GitLab, S3...)."""
+    """A source adapter (filesystem, Confluence, GitHub, GitLab, S3...).
+
+    ``config.acl`` (optional, additive as of schema 1) is a reserved key:
+    a static list of principal strings stamped onto every artifact this
+    source fetches, promoted to the ``__acl`` system field at index time
+    (see ``docs/schema.md``). It is not a source constructor argument.
+    """
 
     type: str
     config: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("config")
+    @classmethod
+    def _validate_acl(cls, value: dict[str, Any]) -> dict[str, Any]:
+        acl = value.get("acl")
+        if acl is None:
+            return value
+        if not isinstance(acl, list) or not all(isinstance(item, str) for item in acl):
+            raise ValueError("source config 'acl' must be a list of strings")
+        return value
 
 
 class ExtractConfig(_Stage):

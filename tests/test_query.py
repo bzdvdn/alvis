@@ -54,6 +54,34 @@ async def test_memory_search_respects_top_k() -> None:
     assert hits[0].text == "a"
 
 
+async def test_query_async_passes_filters_through_to_index() -> None:
+    captured: dict[str, Any] = {}
+
+    class _CapturingIndex:
+        async def upsert(self, *args: object, **kwargs: object) -> None:
+            raise NotImplementedError
+
+        async def reconcile(self, *args: object, **kwargs: object) -> None:
+            raise NotImplementedError
+
+        async def search(
+            self,
+            vector: list[float],
+            *,
+            top_k: int = 5,
+            filters: Any = None,
+            principals: Any = None,
+        ) -> list[SearchHit]:
+            captured["filters"] = filters
+            return []
+
+    config = dsl.pipeline(dsl.fs("."), index=dsl.memory())
+    await query_async(
+        config, "doc", top_k=5, indexer=_CapturingIndex(), filters={"space": "HR"}
+    )
+    assert captured["filters"] == {"space": "HR"}
+
+
 async def test_query_roundtrip_with_shared_memory_index(tmp_path: Path) -> None:
     docs = tmp_path / "docs"
     docs.mkdir()
@@ -135,6 +163,25 @@ async def test_qdrant_search_parses_results_and_scores() -> None:
     assert hits[0].score == pytest.approx(0.9123)
 
 
+async def test_qdrant_search_sends_filter_payload() -> None:
+    captured: dict[str, Any] = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        import json
+
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"result": []})
+
+    index = QdrantIndex(url="http://localhost:6333", collection="t")
+    index.client.transport = httpx.MockTransport(handler)
+
+    await index.search([0.1, 0.2], top_k=1, filters={"space": "HR"})
+
+    assert captured["body"]["filter"] == {
+        "must": [{"key": "space", "match": {"value": "HR"}}]
+    }
+
+
 def test_pgvector_search_builds_sql() -> None:
     import asyncio
 
@@ -145,15 +192,11 @@ def test_pgvector_search_builds_sql() -> None:
             return [("doc text", "u/1", {"heading": "H"}, 0.8), ("other", "u/2", {}, 0.1)]
 
     class _Conn:
+        closed = False
+
         def __init__(self) -> None:
             self.statements: list[str] = []
             self.params: list[tuple[Any, ...]] = []
-
-        async def __aenter__(self) -> _Conn:
-            return self
-
-        async def __aexit__(self, *exc: Any) -> None:
-            return None
 
         async def execute(
             self, sql: Any, params: tuple[Any, ...] | None = None
@@ -178,6 +221,13 @@ def test_pgvector_search_builds_sql() -> None:
     assert hits[0].score == pytest.approx(0.8)
     assert "<=>" in conn.statements[-1]
     assert conn.params[-1] == ("[0.5,0.5]", "[0.5,0.5]", 2)
+
+    async def search_filtered() -> list[SearchHit]:
+        return await index.search([0.5, 0.5], top_k=2, filters={"space": "HR"})
+
+    asyncio.run(search_filtered())
+    assert "metadata @> %s::jsonb" in conn.statements[-1]
+    assert conn.params[-1] == ("[0.5,0.5]", '{"space": "HR"}', "[0.5,0.5]", 2)
 
 
 def test_cli_query_reports_hits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -225,6 +275,37 @@ def test_cli_query_reports_hits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     assert result.exit_code == 0
     assert "u/install" in result.output
     assert "install alvis" in result.output
+
+    result = runner.invoke(
+        app,
+        ["query", str(config), "--text", "install alvis", "--filter", "heading=OTHER"],
+    )
+    assert result.exit_code == 0
+    assert "No matches found." in result.output
+
+
+def test_cli_query_rejects_malformed_filter(tmp_path: Path) -> None:
+    from typer.testing import CliRunner
+
+    from alvis.cli import app
+
+    config = tmp_path / "p.yaml"
+    config.write_text(
+        "pipeline:\n"
+        "  source:\n"
+        "    type: fs\n"
+        "    config:\n"
+        f"      path: {tmp_path}\n"
+        "  index:\n"
+        "    type: memory\n",
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        app, ["query", str(config), "--text", "x", "--filter", "no-equals-sign"]
+    )
+    assert result.exit_code == 1
+    assert "Error" in result.output
 
 
 def test_cli_query_no_matches(tmp_path: Path) -> None:

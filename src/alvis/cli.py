@@ -17,18 +17,21 @@ import yaml
 
 import alvis.observability as ob
 from alvis import __version__
-from alvis.answer import Synthesizer
+from alvis._lifecycle import aclose_quietly
+from alvis.answer import Answer, Synthesizer
 from alvis.config import ConfigError, load_config
-from alvis.core.models import CCT_SCHEMA_VERSION
+from alvis.core.models import CCT_SCHEMA_VERSION, SearchHit
 from alvis.docstore import DocStore
 from alvis.env import load_dotenv, missing_env
 from alvis.errors import PipelineError
+from alvis.evaluation import EvalCase, EvalReport, evaluate_async, load_cases
 from alvis.factories import build_indexer, build_source, source_identity
 from alvis.observability import setup_logging
 from alvis.pipeline.engine import PipelineEngine, PipelineResult
 from alvis.pipeline.runner import answer_async, query_async
 from alvis.plugin import KINDS, Plugin, discover_plugins, load_local_plugins, registry
 from alvis.registry import check_pipeline_supported
+from alvis.rerank import LLMReranker
 from alvis.sources.base import SourceError
 
 app = typer.Typer(
@@ -533,7 +536,93 @@ def run(
         raise typer.Exit(1)
 
 
+async def _answer_and_close(
+    config: str,
+    text: str,
+    top_k: int,
+    llm: Synthesizer | None,
+    filters: dict[str, str] | None,
+    hybrid: bool,
+    reranker: LLMReranker | None = None,
+    principals: list[str] | None = None,
+) -> Answer:
+    """``answer_async`` plus closing the CLI-owned LLM clients."""
+    try:
+        return await answer_async(
+            config,
+            text,
+            top_k=top_k,
+            llm=llm,
+            filters=filters,
+            hybrid=hybrid,
+            rerank=reranker,
+            principals=principals,
+        )
+    finally:
+        if llm is not None:
+            await aclose_quietly(llm)
+        if reranker is not None:
+            await aclose_quietly(reranker)
+
+
+async def _query_and_close(
+    config: str,
+    text: str,
+    top_k: int,
+    filters: dict[str, str] | None,
+    hybrid: bool,
+    reranker: LLMReranker | None = None,
+    principals: list[str] | None = None,
+) -> list[SearchHit]:
+    """``query_async`` plus closing the CLI-owned reranker client."""
+    try:
+        return await query_async(
+            config,
+            text,
+            top_k=top_k,
+            filters=filters,
+            hybrid=hybrid,
+            rerank=reranker,
+            principals=principals,
+        )
+    finally:
+        if reranker is not None:
+            await aclose_quietly(reranker)
+
+
+async def _evaluate_and_close(
+    config: str,
+    cases: list[EvalCase],
+    top_k: int,
+    hybrid: bool,
+    reranker: LLMReranker | None = None,
+    principals: list[str] | None = None,
+) -> EvalReport:
+    """``evaluate_async`` plus closing the CLI-owned reranker client."""
+    try:
+        return await evaluate_async(
+            config, cases, top_k=top_k, hybrid=hybrid, rerank=reranker, principals=principals
+        )
+    finally:
+        if reranker is not None:
+            await aclose_quietly(reranker)
+
+
+def _parse_filters(pairs: list[str] | None) -> dict[str, str] | None:
+    """Parse repeated ``--filter key=value`` options into a metadata filter dict."""
+    if not pairs:
+        return None
+    filters: dict[str, str] = {}
+    for pair in pairs:
+        key, sep, value = pair.partition("=")
+        if not sep:
+            raise ValueError(f"--filter expects key=value, got {pair!r}")
+        filters[key] = value
+    return filters
+
+
 @app.command()
+
 def query(
     config: str = typer.Argument(  # noqa: B008
         ...,
@@ -560,6 +649,44 @@ def query(
         "--top-k",
         help="Number of nearest chunks to return.",
     ),
+    filter_pairs: list[str] = typer.Option(  # noqa: B008
+        None,
+        "--filter",
+        help="Restrict to metadata key=value (repeatable; all pairs must match).",
+    ),
+    principal: list[str] = typer.Option(  # noqa: B008
+        None,
+        "--principal",
+        help=(
+            "Caller identity (repeatable) for ACL enforcement: excludes chunks "
+            "whose 'acl' doesn't include any of these. Omit for no ACL filtering."
+        ),
+    ),
+    hybrid: bool = typer.Option(  # noqa: B008
+        False,
+        "--hybrid",
+        help="Fuse dense search with BM25 keyword search (memory/sqlite indexes only).",
+    ),
+    rerank: bool = typer.Option(  # noqa: B008
+        False,
+        "--rerank",
+        help="Reorder candidates via an LLM chat call before truncating to --top-k.",
+    ),
+    rerank_base_url: str = typer.Option(  # noqa: B008
+        "https://api.openai.com/v1",
+        "--rerank-base-url",
+        help="OpenAI-compatible chat endpoint for --rerank.",
+    ),
+    rerank_model: str = typer.Option(  # noqa: B008
+        "gpt-4o-mini",
+        "--rerank-model",
+        help="Chat model for --rerank.",
+    ),
+    rerank_api_token_env: str = typer.Option(  # noqa: B008
+        "OPENAI_API_KEY",
+        "--rerank-api-token-env",
+        help="Env var holding the chat API token for --rerank.",
+    ),
     answer: bool = typer.Option(  # noqa: B008
         False,
         "--answer",
@@ -585,6 +712,25 @@ def query(
     """Retrieve the chunks closest to --text (or synthesize an answer)."""
     _enable_plugins(plugin_dirs)
     _load_env_file(env_file)
+    if rerank and not os.environ.get(rerank_api_token_env):
+        typer.echo(
+            f"Warning: --rerank set but {rerank_api_token_env} is not set; "
+            "skipping reranking.",
+            err=True,
+        )
+        rerank = False
+    try:
+        filters = _parse_filters(filter_pairs)
+    except ValueError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    reranker = None
+    if rerank:
+        reranker = LLMReranker(
+            base_url=rerank_base_url,
+            model=rerank_model,
+            api_token_env=rerank_api_token_env,
+        )
     try:
         if answer:
             llm = None
@@ -594,9 +740,15 @@ def query(
                     model=llm_model,
                     api_token_env=llm_api_token_env,
                 )
-            result = asyncio.run(answer_async(config, text, top_k=top_k, llm=llm))
+            result = asyncio.run(
+                _answer_and_close(
+                    config, text, top_k, llm, filters, hybrid, reranker, principal
+                )
+            )
         else:
-            results = asyncio.run(query_async(config, text, top_k=top_k))
+            results = asyncio.run(
+                _query_and_close(config, text, top_k, filters, hybrid, reranker, principal)
+            )
             result = None
     except (ConfigError, PipelineError) as exc:
         typer.echo(f"Error: {exc}", err=True)
@@ -622,6 +774,130 @@ def query(
                 typer.echo(f"      {key}: {value}")
         snippet = " ".join(hit.text.split())
         typer.echo(f"      {snippet[:180]}")
+
+
+@app.command()
+def eval(  # noqa: A001 - deliberate CLI verb, shadows builtin only as a local name
+    config: str = typer.Argument(  # noqa: B008
+        ...,
+        help="Path to the pipeline YAML config (uses its embed + index stages).",
+    ),
+    cases: Path = typer.Argument(  # noqa: B008
+        ...,
+        help="YAML file: a list of {query, expected_source_uri} cases.",
+    ),
+    plugin_dirs: list[Path] = typer.Option(  # noqa: B008
+        None,
+        "--plugins",
+        help="Directories of local companion-plugin .py files to load.",
+    ),
+    env_file: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--env-file",
+        help="Load secrets from this file (default: ./.env if present).",
+    ),
+    top_k: int = typer.Option(  # noqa: B008
+        5,
+        "--top-k",
+        help="Number of nearest chunks to retrieve per case.",
+    ),
+    principal: list[str] = typer.Option(  # noqa: B008
+        None,
+        "--principal",
+        help=(
+            "Default caller identity (repeatable) for every case; a case's "
+            "own 'principals' in the cases file overrides this."
+        ),
+    ),
+    hybrid: bool = typer.Option(  # noqa: B008
+        False,
+        "--hybrid",
+        help="Fuse dense search with BM25 keyword search (memory/sqlite indexes only).",
+    ),
+    rerank: bool = typer.Option(  # noqa: B008
+        False,
+        "--rerank",
+        help="Reorder candidates via an LLM chat call before truncating to --top-k.",
+    ),
+    rerank_base_url: str = typer.Option(  # noqa: B008
+        "https://api.openai.com/v1",
+        "--rerank-base-url",
+        help="OpenAI-compatible chat endpoint for --rerank.",
+    ),
+    rerank_model: str = typer.Option(  # noqa: B008
+        "gpt-4o-mini",
+        "--rerank-model",
+        help="Chat model for --rerank.",
+    ),
+    rerank_api_token_env: str = typer.Option(  # noqa: B008
+        "OPENAI_API_KEY",
+        "--rerank-api-token-env",
+        help="Env var holding the chat API token for --rerank.",
+    ),
+    min_hit_rate: float = typer.Option(  # noqa: B008
+        0.0,
+        "--min-hit-rate",
+        help="Exit 1 if hit rate falls below this threshold (CI gate).",
+    ),
+    json_output: bool = typer.Option(  # noqa: B008
+        False,
+        "--json",
+        help="Machine-readable report for CI.",
+    ),
+) -> None:
+    """Score retrieval quality: does each case's query surface its expected document?"""
+    _enable_plugins(plugin_dirs)
+    _load_env_file(env_file)
+    if rerank and not os.environ.get(rerank_api_token_env):
+        typer.echo(
+            f"Warning: --rerank set but {rerank_api_token_env} is not set; "
+            "skipping reranking.",
+            err=True,
+        )
+        rerank = False
+    reranker = (
+        LLMReranker(
+            base_url=rerank_base_url, model=rerank_model, api_token_env=rerank_api_token_env
+        )
+        if rerank
+        else None
+    )
+    try:
+        eval_cases = load_cases(cases)
+        report = asyncio.run(
+            _evaluate_and_close(config, eval_cases, top_k, hybrid, reranker, principal)
+        )
+    except (ConfigError, PipelineError) as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "hit_rate": report.hit_rate,
+                    "mrr": report.mrr,
+                    "cases": len(report.results),
+                    "misses": [r.case.query for r in report.misses],
+                },
+                indent=2,
+            )
+        )
+    else:
+        typer.echo(
+            f"{len(report.results)} case(s): "
+            f"hit_rate={report.hit_rate:.2f} mrr={report.mrr:.2f}"
+        )
+        for result in report.results:
+            status = f"rank {result.rank}" if result.hit else "MISS"
+            typer.echo(
+                f"  [{status}] {result.case.query!r} -> {result.case.expected_source_uri}"
+            )
+    if report.hit_rate < min_hit_rate:
+        typer.echo(
+            f"hit_rate {report.hit_rate:.2f} below --min-hit-rate {min_hit_rate:.2f}",
+            err=True,
+        )
+        raise typer.Exit(1)
 
 
 async def _collect_status(

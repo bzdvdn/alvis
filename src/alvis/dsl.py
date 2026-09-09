@@ -40,11 +40,21 @@ from alvis.config.models import (
 def fs(
     path: str | Path,
     pattern: str | None = None,
+    acl: list[str] | None = None,
 ) -> SourceConfig:
-    """Ingest text files under a directory (optionally matching ``pattern``)."""
+    """Ingest text files under a directory (optionally matching ``pattern``).
+
+    ``acl`` (optional) is a static list of principal strings stamped onto
+    every artifact this source fetches — see ``docs/schema.md`` and
+    :class:`alvis.pipeline.stages.FetchStage`.
+    """
     return SourceConfig(
         type="fs",
-        config={"path": str(path), **({"pattern": pattern} if pattern else {})},
+        config={
+            "path": str(path),
+            **({"pattern": pattern} if pattern else {}),
+            **({"acl": acl} if acl else {}),
+        },
     )
 
 
@@ -56,8 +66,13 @@ def confluence(
     retries: int = 3,
     retry_backoff: float = 1.0,
     verify: bool | str = True,
+    acl: list[str] | None = None,
 ) -> SourceConfig:
-    """Ingest pages of a Confluence space via its REST API."""
+    """Ingest pages of a Confluence space via its REST API.
+
+    ``acl`` (optional) is a static list of principal strings stamped onto
+    every artifact this source fetches — see ``docs/schema.md``.
+    """
     return SourceConfig(
         type="confluence",
         config={
@@ -68,6 +83,7 @@ def confluence(
             **({"retries": retries} if retries != 3 else {}),
             **({"retry_backoff": retry_backoff} if retry_backoff != 1.0 else {}),
             **({"verify": verify} if verify is not True else {}),
+            **({"acl": acl} if acl else {}),
         },
     )
 
@@ -82,8 +98,13 @@ def github(
     retries: int = 3,
     retry_backoff: float = 1.0,
     verify: bool | str = True,
+    acl: list[str] | None = None,
 ) -> SourceConfig:
-    """Ingest blobs of a GitHub repository tree."""
+    """Ingest blobs of a GitHub repository tree.
+
+    ``acl`` (optional) is a static list of principal strings stamped onto
+    every artifact this source fetches — see ``docs/schema.md``.
+    """
     return SourceConfig(
         type="github",
         config={
@@ -96,6 +117,7 @@ def github(
             **({"retries": retries} if retries != 3 else {}),
             **({"retry_backoff": retry_backoff} if retry_backoff != 1.0 else {}),
             **({"verify": verify} if verify is not True else {}),
+            **({"acl": acl} if acl else {}),
         },
     )
 
@@ -116,13 +138,15 @@ def gitlab(
     retries: int = 3,
     retry_backoff: float = 1.0,
     verify: bool | str = True,
+    acl: list[str] | None = None,
 ) -> SourceConfig:
     """Ingest blobs of a GitLab project (works with self-hosted instances).
 
     Pass ``project`` for a single repository, or ``group`` to traverse every
     project in a group. Use ``project_include_globs`` / ``project_exclude_globs``
     to narrow which group repositories are ingested (matched against the full
-    ``group/project`` path).
+    ``group/project`` path). ``acl`` (optional) is a static list of principal
+    strings stamped onto every artifact this source fetches.
     """
     if project is None and group is None:
         raise ValueError("gitlab() requires 'project' or 'group'")
@@ -152,6 +176,7 @@ def gitlab(
             **({"retries": retries} if retries != 3 else {}),
             **({"retry_backoff": retry_backoff} if retry_backoff != 1.0 else {}),
             **({"verify": verify} if verify is not True else {}),
+            **({"acl": acl} if acl else {}),
         },
     )
 
@@ -168,8 +193,13 @@ def s3(
     retries: int = 3,
     retry_backoff: float = 1.0,
     verify: bool | str = True,
+    acl: list[str] | None = None,
 ) -> SourceConfig:
-    """Ingest text objects from an S3-compatible bucket (SigV4, no boto3)."""
+    """Ingest text objects from an S3-compatible bucket (SigV4, no boto3).
+
+    ``acl`` (optional) is a static list of principal strings stamped onto
+    every artifact this source fetches.
+    """
     return SourceConfig(
         type="s3",
         config={
@@ -184,6 +214,7 @@ def s3(
             **({"retries": retries} if retries != 3 else {}),
             **({"retry_backoff": retry_backoff} if retry_backoff != 1.0 else {}),
             **({"verify": verify} if verify is not True else {}),
+            **({"acl": acl} if acl else {}),
         },
     )
 
@@ -196,8 +227,13 @@ def static_url(
     retries: int = 3,
     retry_backoff: float = 1.0,
     verify: bool | str = True,
+    acl: list[str] | None = None,
 ) -> SourceConfig:
-    """Ingest plain HTML (or other text) pages served over HTTP(S), no JS."""
+    """Ingest plain HTML (or other text) pages served over HTTP(S), no JS.
+
+    ``acl`` (optional) is a static list of principal strings stamped onto
+    every artifact this source fetches.
+    """
     return SourceConfig(
         type="static_url",
         config={
@@ -208,6 +244,7 @@ def static_url(
             **({"retries": retries} if retries != 3 else {}),
             **({"retry_backoff": retry_backoff} if retry_backoff != 1.0 else {}),
             **({"verify": verify} if verify is not True else {}),
+            **({"acl": acl} if acl else {}),
         },
     )
 

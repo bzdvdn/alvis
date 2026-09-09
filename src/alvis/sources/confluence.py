@@ -38,6 +38,10 @@ class ConfluenceSource:
             verify=verify,
         )
 
+    async def aclose(self) -> None:
+        """Release the underlying HTTP connection pool."""
+        await self.client.aclose()
+
     async def list_documents(self) -> list[DocumentMeta]:
         """Fingerprint pages by their version number (no expanded bodies)."""
         pages = await self._list_pages()

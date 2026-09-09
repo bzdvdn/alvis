@@ -86,6 +86,10 @@ class Synthesizer:
         )
         self.signature = f"openai-chat:{model}"
 
+    async def aclose(self) -> None:
+        """Release the underlying HTTP connection pool."""
+        await self.client.aclose()
+
     async def answer(self, question: str, hits: Sequence[SearchHit]) -> Answer:
         """Synthesize a cited answer over the given retrieval hits."""
         payload: dict[str, Any] = {

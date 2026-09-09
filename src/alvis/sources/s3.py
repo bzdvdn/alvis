@@ -171,6 +171,10 @@ class S3Source:
             max_bytes=max_bytes,
         )
 
+    async def aclose(self) -> None:
+        """Release the underlying HTTP connection pool."""
+        await self.client.aclose()
+
     async def list_documents(self) -> list[DocumentMeta]:
         """Fingerprint objects from the listing (ETag, no body download)."""
         metas: list[DocumentMeta] = []

@@ -93,6 +93,45 @@ def test_unknown_stage_key_rejected(tmp_path: Path) -> None:
         load_config(write(tmp_path, content))
 
 
+def test_source_acl_accepts_list_of_strings(tmp_path: Path) -> None:
+    content = (
+        "pipeline:\n"
+        "  source:\n"
+        "    type: fs\n"
+        "    config:\n"
+        "      path: .\n"
+        "      acl: [eng, ops]\n"
+    )
+    config = load_config(write(tmp_path, content))
+    assert config.source.config["acl"] == ["eng", "ops"]
+
+
+def test_source_acl_rejects_non_list(tmp_path: Path) -> None:
+    content = (
+        "pipeline:\n"
+        "  source:\n"
+        "    type: fs\n"
+        "    config:\n"
+        "      path: .\n"
+        "      acl: eng\n"
+    )
+    with pytest.raises(ConfigError, match="acl"):
+        load_config(write(tmp_path, content))
+
+
+def test_source_acl_rejects_non_string_items(tmp_path: Path) -> None:
+    content = (
+        "pipeline:\n"
+        "  source:\n"
+        "    type: fs\n"
+        "    config:\n"
+        "      path: .\n"
+        "      acl: [eng, 42]\n"
+    )
+    with pytest.raises(ConfigError, match="acl"):
+        load_config(write(tmp_path, content))
+
+
 def test_schema_version_defaults_to_one(tmp_path: Path) -> None:
     cfg = load_config(write(tmp_path, VALID_PIPELINE))
     assert cfg.schema_version == 1

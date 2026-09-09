@@ -20,3 +20,6 @@ htmlcov/
 
 # port pilot (workspace, not repo content)
 pilot/
+
+# local architecture review / improvement plan (not for the repo)
+.roadmap.md

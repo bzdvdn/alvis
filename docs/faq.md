@@ -92,6 +92,18 @@ with `[N]` citations tied to each `source_uri`. Without an API key,
 `alvis query --answer` falls back to numbered excerpts instead of failing:
 `answer(cfg, question, llm=Synthesizer(...))` / CLI `--answer`.
 
+## Can I restrict who sees what in retrieval?
+
+Yes, at the source level: `source.config.acl: [principal, ...]` stamps a
+static list of principal strings onto every chunk that source produces
+(promoted to the reserved `__acl` field). `alvis query --principal name`
+(repeatable) then excludes chunks whose `acl` doesn't include any of the
+given principals — a chunk with no `acl` is always public. Omit
+`--principal` for no filtering at all (the default). This is a static
+per-source tag, not live per-document permissions pulled from the origin
+system — no connector fetches those today. See the
+[README's ACL section](../README.md#acl-aware-retrieval).
+
 ## Where do I report a bug or request a source?
 
 Open an issue on the repository. When contributing a connector, follow the

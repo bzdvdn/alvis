@@ -83,6 +83,10 @@ class GitLabSource:
             max_bytes=max_bytes,
         )
 
+    async def aclose(self) -> None:
+        """Release the underlying HTTP connection pool."""
+        await self.client.aclose()
+
     async def _resolve_projects(self) -> list[str]:
         if self._resolved_projects is not None:
             return self._resolved_projects

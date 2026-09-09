@@ -33,6 +33,30 @@ async def test_memory_index_deterministic_ids_overwrite() -> None:
     assert index.entries()[0][1] == [0.9]
 
 
+async def test_memory_index_search_filters_by_metadata() -> None:
+    index = MemoryIndex()
+    eng = Chunk(text="eng doc", source_uri="u/eng", metadata={"space": "ENG"})
+    hr = Chunk(text="hr doc", source_uri="u/hr", metadata={"space": "HR"})
+    await index.upsert(eng, [1.0, 0.0], source_id="fs:/x", artifact_hash="a")
+    await index.upsert(hr, [1.0, 0.0], source_id="fs:/x", artifact_hash="a")
+
+    hits = await index.search([1.0, 0.0], top_k=5, filters={"space": "HR"})
+
+    assert [hit.text for hit in hits] == ["hr doc"]
+
+
+async def test_memory_index_search_no_filter_returns_all() -> None:
+    index = MemoryIndex()
+    a = Chunk(text="a", source_uri="u/a", metadata={"space": "ENG"})
+    b = Chunk(text="b", source_uri="u/b", metadata={"space": "HR"})
+    await index.upsert(a, [1.0, 0.0], source_id="fs:/x", artifact_hash="a")
+    await index.upsert(b, [1.0, 0.0], source_id="fs:/x", artifact_hash="a")
+
+    hits = await index.search([1.0, 0.0], top_k=5)
+
+    assert {hit.text for hit in hits} == {"a", "b"}
+
+
 async def test_memory_index_reconcile_prunes_stale() -> None:
     index = MemoryIndex()
     changed = Chunk(text="old text", source_uri="u/changed")

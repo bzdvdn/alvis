@@ -1,0 +1,27 @@
+# Retrieval-quality eval fixture: docs/ -> persistent sqlite index, default
+# embedder. Zero external services, so it runs the same way in CI as any
+# other test. Paired with examples/eval-cases.yaml:
+#
+#   alvis run examples/eval-pipeline.yaml
+#   alvis eval examples/eval-pipeline.yaml examples/eval-cases.yaml
+pipeline:
+  source:
+    type: fs
+    config:
+      path: examples/docs
+
+  extract:
+    strategy: auto
+
+  chunk:
+    strategy: sections
+    config:
+      max_tokens: 200
+
+  embed:
+    type: default
+
+  index:
+    type: sqlite
+    config:
+      path: .alvis/eval.db
