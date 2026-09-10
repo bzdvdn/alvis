@@ -7,7 +7,7 @@ versioning for YAML / Canonical Content Tree (see
 
 ## Release numbers
 
-- **`1.0.0rc2` (current release candidate).** The stable surface is frozen;
+- **`1.0.0rc3` (current release candidate).** The stable surface is frozen;
   RC releases may still contain release-blocking fixes, but no intentional
   contract changes. The stable surface below is honored from its freeze and
   beyond `1.0.0`.

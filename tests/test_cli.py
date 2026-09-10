@@ -22,7 +22,7 @@ def _isolated_registry() -> None:
 def test_version() -> None:
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert result.output.strip() == "alvis 1.0.0rc2"
+    assert result.output.strip() == "alvis 1.0.0rc3"
 
 
 def test_validate_ok(tmp_path: Path) -> None:
