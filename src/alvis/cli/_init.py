@@ -64,6 +64,10 @@ _INDEX_TEMPLATES: dict[str, dict[str, object]] = {
         "type": "pgvector",
         "config": {"dsn_env": "POSTGRES_DSN", "table": "alvis_chunks"},
     },
+    "elasticsearch": {
+        "type": "elasticsearch",
+        "config": {"url": "http://localhost:9200", "index": "alvis_docs"},
+    },
 }
 
 
@@ -102,7 +106,7 @@ def init(
     index: str = typer.Option(  # noqa: B008
         "qdrant",
         "--index",
-        help="Index adapter to scaffold (memory, sqlite, qdrant, pgvector).",
+        help="Index adapter to scaffold (memory, sqlite, qdrant, pgvector, elasticsearch).",
     ),
     force: bool = typer.Option(False, "--force", "-f", help="Overwrite an existing alvis.yaml."),
     path: Path = typer.Argument(  # noqa: B008

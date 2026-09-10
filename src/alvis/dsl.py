@@ -372,6 +372,35 @@ def qdrant(
     )
 
 
+def elasticsearch(
+    url: str,
+    index: str,
+    api_token_env: str | None = None,
+    username: str | None = None,
+    retries: int = 3,
+    retry_backoff: float = 1.0,
+    verify: bool | str = True,
+) -> IndexConfig:
+    """Store vectors in an Elasticsearch index (dense_vector + kNN, ES 8.0+).
+
+    Targets Elasticsearch's native ``knn`` search specifically, not
+    OpenSearch's separate k-NN plugin dialect — see
+    :mod:`alvis.index.elasticsearch`.
+    """
+    return IndexConfig(
+        type="elasticsearch",
+        config={
+            "url": url,
+            "index": index,
+            **({"api_token_env": api_token_env} if api_token_env else {}),
+            **({"username": username} if username else {}),
+            **({"retries": retries} if retries != 3 else {}),
+            **({"retry_backoff": retry_backoff} if retry_backoff != 1.0 else {}),
+            **({"verify": verify} if verify is not True else {}),
+        },
+    )
+
+
 def memory() -> IndexConfig:
     """In-memory index (tests, small prototypes)."""
     return IndexConfig(type="memory")

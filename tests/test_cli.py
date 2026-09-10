@@ -37,6 +37,24 @@ def test_validate_ok(tmp_path: Path) -> None:
     assert "source: confluence" in result.output
 
 
+def test_validate_ok_elasticsearch_index(tmp_path: Path) -> None:
+    config = tmp_path / "pipeline.yaml"
+    config.write_text(
+        "pipeline:\n"
+        "  source:\n"
+        "    type: confluence\n"
+        "  index:\n"
+        "    type: elasticsearch\n"
+        "    config:\n"
+        "      url: http://localhost:9200\n"
+        "      index: alvis_docs\n",
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["validate", str(config)])
+    assert result.exit_code == 0
+    assert "is valid" in result.output
+
+
 def test_validate_invalid_structure(tmp_path: Path) -> None:
     config = tmp_path / "pipeline.yaml"
     config.write_text("foo: bar\n", encoding="utf-8")

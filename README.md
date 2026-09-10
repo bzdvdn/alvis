@@ -318,10 +318,18 @@ pipeline.yaml: 12 documents, 87 chunks indexed
   (autocommit) rather than reconnecting per statement.
 - `sqlite` — persistent single-file store (`path`), no extra dependencies; a
   chroma-style dev backend that survives restarts. `alvis init --index sqlite`.
+- `elasticsearch` — Elasticsearch's native `dense_vector`/`knn` search
+  (`url`, `index`; requires **Elasticsearch 8.0+**, not OpenSearch's
+  separate k-NN plugin dialect — the two forked before their vector-search
+  APIs converged, and this client only speaks Elasticsearch's). No
+  `elasticsearch-py` dependency — plain REST, like every other backend
+  here. `keyword_search` (`--hybrid`) runs Elasticsearch's own BM25
+  `match` query server-side, unlike `qdrant`'s local-scoring workaround.
 - `memory` — in-memory store for tests and prototypes.
 
-All HTTP-backed adapters (`qdrant`, every source, the `openai` embedder,
-`--answer`'s LLM client) share one pooled `httpx.AsyncClient` per instance
+All HTTP-backed adapters (`qdrant`, `elasticsearch`, every source, the
+`openai` embedder, `--answer`'s LLM client) share one pooled
+`httpx.AsyncClient` per instance
 instead of opening a new connection per request; a source/indexer built
 internally by `run`/`query`/`eval` is closed automatically when the call
 returns, so long-running `--watch` loops don't leak connections tick over

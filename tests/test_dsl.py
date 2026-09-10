@@ -128,6 +128,18 @@ def test_pgvector_dsl_populates_config() -> None:
     assert "dsn_env" not in cfg.config
 
 
+def test_elasticsearch_dsl_populates_config() -> None:
+    cfg = dsl.elasticsearch(
+        url="http://localhost:9200", index="alvis_docs", username="elastic"
+    )
+    assert cfg.type == "elasticsearch"
+    assert cfg.config["url"] == "http://localhost:9200"
+    assert cfg.config["index"] == "alvis_docs"
+    assert cfg.config["username"] == "elastic"
+    assert "api_token_env" not in cfg.config
+    assert "retries" not in cfg.config
+
+
 def test_sqlite_dsl_populates_config() -> None:
     cfg = dsl.sqlite(path="local.db")
     assert cfg.type == "sqlite"

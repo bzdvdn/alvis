@@ -27,7 +27,7 @@ from alvis.embed import (
 )
 from alvis.extract import AutoExtractor
 from alvis.extract.base import Extractor
-from alvis.index import MemoryIndex, PgVectorIndex, QdrantIndex, SqliteIndex
+from alvis.index import ElasticsearchIndex, MemoryIndex, PgVectorIndex, QdrantIndex, SqliteIndex
 from alvis.index.base import Indexer
 from alvis.plugin import registry
 from alvis.registry import known_sources
@@ -157,6 +157,8 @@ def build_indexer(config: IndexConfig) -> Indexer:
         return PgVectorIndex(**config.config)
     if config.type == "sqlite":
         return SqliteIndex(**config.config)
+    if config.type == "elasticsearch":
+        return ElasticsearchIndex(**config.config)
     plugin_factory = registry().factory("indexer", config.type)
     if plugin_factory is not None:
         return plugin_factory(config=config)  # type: ignore[return-value]

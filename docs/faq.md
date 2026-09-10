@@ -70,6 +70,11 @@ basic in-process store.
 - `memory` — tests and prototypes.
 - `qdrant` — the default for real use (`url`, `collection`).
 - `pgvector` — PostgreSQL + pgvector (`alvis[pgindex]`).
+- `elasticsearch` — if you already run Elasticsearch 8.0+ (`url`, `index`).
+  Not OpenSearch — that's a separate k-NN plugin dialect this client
+  doesn't speak. Its `keyword_search`/`--hybrid` runs Elasticsearch's own
+  BM25 server-side, unlike `qdrant`'s local-scoring fallback.
+- `sqlite` — persistent single-file store, no extra dependencies.
 
 ## The embedder is deterministic. Is that real?
 

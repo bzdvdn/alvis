@@ -148,10 +148,15 @@ which needed a contract-breaking change.
   stays retrieval-only, no API key needed); CLI `alvis eval --judge`
   (`--answer-*` for the synthesis model, `--judge-*` for the grading model — can
   differ, e.g. a stronger judge grading a cheaper model's answers).
-- [ ] Vector-store breadth beyond `qdrant`/`pgvector` (Elasticsearch/OpenSearch,
-  Weaviate, Pinecone, ...) — the Plugin SDK makes this possible externally, but
-  nothing ships in-tree; likely the single biggest adoption blocker against
-  broader RAG frameworks with 30+ vector-store integrations.
+- [x] Vector-store breadth, first step: `elasticsearch` (Elasticsearch 8.0+'s
+  native `dense_vector`/`knn` search specifically, not OpenSearch's separate
+  k-NN plugin dialect — no client library, plain REST like every other
+  backend). Its `keyword_search` runs Elasticsearch's real server-side BM25,
+  unlike `qdrant`'s local-scoring-over-a-candidate-pool workaround. No
+  batch-write path yet (`_bulk` needs a raw NDJSON body the shared
+  `HttpClient` doesn't support) — falls back to the per-chunk upsert loop.
+  Weaviate/Pinecone/OpenSearch's own dialect remain open; the Plugin SDK
+  makes any of them possible externally without a core change.
 - [ ] Source connectors beyond the DevOps/engineering-KB profile (GitLab/GitHub/
   Confluence/S3/fs/static_url) — no Notion/SharePoint/Google Drive/Slack/Jira.
 
