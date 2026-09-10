@@ -128,6 +128,75 @@ def test_pgvector_dsl_populates_config() -> None:
     assert "dsn_env" not in cfg.config
 
 
+def test_gdrive_dsl_populates_config() -> None:
+    cfg = dsl.gdrive(
+        service_account_key_env="GDRIVE_KEY", folder_id="folder-1", max_concurrency=3
+    )
+    assert cfg.type == "gdrive"
+    assert cfg.config["service_account_key_env"] == "GDRIVE_KEY"
+    assert cfg.config["folder_id"] == "folder-1"
+    assert cfg.config["max_concurrency"] == 3
+
+    default = dsl.gdrive(service_account_key_env="GDRIVE_KEY")
+    assert "folder_id" not in default.config
+    assert "max_concurrency" not in default.config
+
+
+def test_sharepoint_dsl_populates_config() -> None:
+    cfg = dsl.sharepoint(
+        tenant_id="tenant-1",
+        client_id="client-1",
+        site_url="https://contoso.sharepoint.com/sites/TeamSite",
+        client_secret_env="SP_SECRET",
+        max_concurrency=3,
+    )
+    assert cfg.type == "sharepoint"
+    assert cfg.config["tenant_id"] == "tenant-1"
+    assert cfg.config["client_id"] == "client-1"
+    assert cfg.config["site_url"] == "https://contoso.sharepoint.com/sites/TeamSite"
+    assert cfg.config["client_secret_env"] == "SP_SECRET"
+    assert cfg.config["max_concurrency"] == 3
+
+    default = dsl.sharepoint(
+        tenant_id="tenant-1",
+        client_id="client-1",
+        site_url="https://contoso.sharepoint.com/sites/TeamSite",
+        client_secret_env="SP_SECRET",
+    )
+    assert "max_concurrency" not in default.config
+    assert "max_bytes" not in default.config
+
+
+def test_jira_dsl_populates_config() -> None:
+    cfg = dsl.jira(url="https://acme.atlassian.net", project="ENG", max_concurrency=3)
+    assert cfg.type == "jira"
+    assert cfg.config["url"] == "https://acme.atlassian.net"
+    assert cfg.config["project"] == "ENG"
+    assert cfg.config["max_concurrency"] == 3
+    assert "jql" not in cfg.config
+
+    default = dsl.jira(url="https://acme.atlassian.net", project="ENG")
+    assert "max_concurrency" not in default.config
+
+
+def test_jira_dsl_requires_project_or_jql() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="'project' or 'jql'"):
+        dsl.jira(url="https://acme.atlassian.net")
+
+
+def test_notion_dsl_populates_config() -> None:
+    cfg = dsl.notion(api_token_env="NOTION_TOKEN", max_concurrency=3)
+    assert cfg.type == "notion"
+    assert cfg.config["api_token_env"] == "NOTION_TOKEN"
+    assert cfg.config["max_concurrency"] == 3
+
+    default = dsl.notion(api_token_env="NOTION_TOKEN")
+    assert "max_concurrency" not in default.config
+    assert "retries" not in default.config
+
+
 def test_elasticsearch_dsl_populates_config() -> None:
     cfg = dsl.elasticsearch(
         url="http://localhost:9200", index="alvis_docs", username="elastic"

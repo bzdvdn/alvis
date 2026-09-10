@@ -24,7 +24,7 @@ import logging
 import math
 import time
 from collections import defaultdict
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncGenerator, Iterator
 from contextlib import AbstractContextManager, asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 from typing import Any
@@ -120,7 +120,9 @@ class _TextFormatter(logging.Formatter):
         line = super().format(record)
         fields = _event_fields(record)
         if fields:
-            line += " " + " ".join(f"{key}={value}" for key, value in sorted(fields.items()))
+            line += " " + " ".join(
+                f"{key}={value}" for key, value in sorted(fields.items())
+            )
         return line
 
 
@@ -140,7 +142,9 @@ def setup_logging(*, level: int | str = logging.INFO, json: bool = False) -> Non
     if json:
         handler.setFormatter(_JsonFormatter())
     else:
-        handler.setFormatter(_TextFormatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        handler.setFormatter(
+            _TextFormatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+        )
     alvis.addHandler(handler)
     alvis.setLevel(level)
     alvis.propagate = False
@@ -222,7 +226,9 @@ class Metrics:
             self._prom_registry = pc.CollectorRegistry()
         return self._prom
 
-    def inc(self, name: str, *, amount: int = 1, labels: dict[str, str] | None = None) -> None:
+    def inc(
+        self, name: str, *, amount: int = 1, labels: dict[str, str] | None = None
+    ) -> None:
         """Increment a counter (or create it)."""
         key = _label_key(labels)
         if self.use_prometheus:
@@ -304,7 +310,9 @@ class Metrics:
                 _format_key(k): {
                     "count": h.count,
                     "sum": h.sum,
-                    "buckets": {str(bucket): n for bucket, n in sorted(h.counts.items())},
+                    "buckets": {
+                        str(bucket): n for bucket, n in sorted(h.counts.items())
+                    },
                 }
                 for k, h in family.items()
             }
@@ -342,10 +350,10 @@ class Metrics:
                         continue
                     le = _with_le(key, _format_number(bucket))
                     lines.append(f"{name}_bucket{{{le}}} {hist.counts[bucket]}")
+                lines.append(f"{name}_bucket{{{_with_le(key, '+Inf')}}} {hist.count}")
                 lines.append(
-                    f"{name}_bucket{{{_with_le(key, '+Inf')}}} {hist.count}"
+                    f"{name}_sum{_format_labels(key)} {_format_number(hist.sum)}"
                 )
-                lines.append(f"{name}_sum{_format_labels(key)} {_format_number(hist.sum)}")
                 lines.append(f"{name}_count{_format_labels(key)} {hist.count}")
         return ("\n".join(lines) + "\n").encode() if lines else b""
 
@@ -433,7 +441,7 @@ def timer(
 @asynccontextmanager
 async def span(
     name: str, *, attributes: dict[str, Any] | None = None
-) -> AsyncIterator[None]:
+) -> AsyncGenerator[None]:
     """Open a traced span around a block; a no-op without a configured tracer.
 
     Pass an OpenTelemetry ``Tracer`` to :func:`configure_observability` to

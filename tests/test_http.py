@@ -99,6 +99,26 @@ async def test_verify_passthrough_does_not_break_requests() -> None:
     assert await client.request("GET", "/rest/api") == {"ok": True}
 
 
+async def test_request_form_sends_urlencoded_body_not_json() -> None:
+    captured: dict[str, object] = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        captured["content_type"] = request.headers.get("content-type", "")
+        captured["body"] = request.content.decode()
+        return httpx.Response(200, json={"access_token": "t"})
+
+    client = _client(handler=handler)
+    result = await client.request(
+        "POST", "/token", form={"grant_type": "client_credentials", "client_id": "abc"}
+    )
+
+    assert result == {"access_token": "t"}
+    assert "application/x-www-form-urlencoded" in str(captured["content_type"])
+    body = str(captured["body"])
+    assert "grant_type=client_credentials" in body
+    assert "client_id=abc" in body
+
+
 async def test_factory_config_passes_retries_and_verify() -> None:
     from alvis.config.models import SourceConfig
     from alvis.factories import build_source
@@ -118,3 +138,33 @@ async def test_factory_config_passes_retries_and_verify() -> None:
     assert source.client.max_retries == 5
     assert source.client.retry_backoff == 2.5
     assert source.client.verify is False
+
+
+async def test_build_source_per_source_max_bytes_wins_over_engine_level() -> None:
+    """Regression: a source that accepts `max_bytes` (github/gitlab/s3/
+    static_url/fs/sharepoint) used to raise "got multiple values for
+    argument 'max_bytes'" when config.config also declared max_bytes,
+    since build_source forwarded it both via **settings and the explicit
+    engine-level max_bytes= kwarg. The per-source value should win."""
+    from alvis.config.models import SourceConfig
+    from alvis.factories import build_source
+
+    source = build_source(
+        SourceConfig(
+            type="github",
+            config={"repo": "acme/kb", "max_bytes": 111},
+        ),
+        max_bytes=999,
+    )
+    assert source.client.max_bytes == 111
+
+
+async def test_build_source_falls_back_to_engine_max_bytes_when_source_omits_it() -> None:
+    from alvis.config.models import SourceConfig
+    from alvis.factories import build_source
+
+    source = build_source(
+        SourceConfig(type="github", config={"repo": "acme/kb"}),
+        max_bytes=999,
+    )
+    assert source.client.max_bytes == 999

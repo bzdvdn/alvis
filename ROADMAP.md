@@ -157,8 +157,25 @@ which needed a contract-breaking change.
   `HttpClient` doesn't support) — falls back to the per-chunk upsert loop.
   Weaviate/Pinecone/OpenSearch's own dialect remain open; the Plugin SDK
   makes any of them possible externally without a core change.
-- [ ] Source connectors beyond the DevOps/engineering-KB profile (GitLab/GitHub/
-  Confluence/S3/fs/static_url) — no Notion/SharePoint/Google Drive/Slack/Jira.
+- [x] Source connectors beyond the DevOps/engineering-KB profile: `notion` —
+  simple integration-token auth, same "no client library, plain REST"
+  approach as every other source. Renders each page's blocks to a
+  lightweight Markdown approximation; not a faithful reproduction of
+  Notion's richer block types (tables, embeds, synced blocks, databases as
+  tables). `jira` — same Atlassian Basic-auth scheme as `confluence`
+  (account email + API token); matches issues via `project` or a raw
+  `jql` query, ingests `description` as the classic API v2's plain wiki
+  markup rather than API v3's Atlassian Document Format. `sharepoint` —
+  OAuth2 client-credentials against Azure AD (app registration, no user in
+  the loop), Microsoft Graph delta query to walk a site's document
+  library; no Graph SDK, plain REST like everything else here (needed one
+  shared-code addition: `HttpClient` gained a `form` request body, since
+  OAuth2 token exchanges are form-urlencoded, not JSON). `gdrive` — a
+  Google service account's self-signed RS256 JWT exchanged for an OAuth2
+  token; the one source needing a real third-party dependency
+  (`cryptography`, `pip install alvis[gdrive]`) rather than hand-rolled
+  HTTP, since RSA signing has no stdlib primitive (unlike `s3`'s SigV4,
+  which is HMAC). Slack remains open.
 
 ---
 

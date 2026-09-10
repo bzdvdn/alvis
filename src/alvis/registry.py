@@ -36,7 +36,18 @@ def known_indexes() -> set[str]:
     return KNOWN_INDEXES | _plugin_types("indexer")
 
 
-KNOWN_SOURCES: set[str] = {"fs", "confluence", "github", "gitlab", "s3", "static_url"}
+KNOWN_SOURCES: set[str] = {
+    "fs",
+    "confluence",
+    "github",
+    "gitlab",
+    "s3",
+    "static_url",
+    "notion",
+    "jira",
+    "sharepoint",
+    "gdrive",
+}
 KNOWN_EXTRACT_STRATEGIES: set[str] = {"auto"}
 KNOWN_CHUNK_STRATEGIES: set[str] = {"auto", "sections", "size"}
 KNOWN_EMBEDDERS: set[str] = {"default", "openai"}

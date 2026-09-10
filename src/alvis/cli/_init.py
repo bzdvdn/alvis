@@ -51,6 +51,36 @@ _SOURCE_TEMPLATES: dict[str, dict[str, object]] = {
             "urls": ["https://example.com/docs/"],
         },
     },
+    "notion": {
+        "type": "notion",
+        "config": {
+            "api_token_env": "NOTION_API_TOKEN",
+        },
+    },
+    "jira": {
+        "type": "jira",
+        "config": {
+            "url": "https://acme.atlassian.net",
+            "project": "ENG",
+            "username": "you@example.com",
+            "api_token_env": "JIRA_API_TOKEN",
+        },
+    },
+    "sharepoint": {
+        "type": "sharepoint",
+        "config": {
+            "tenant_id": "00000000-0000-0000-0000-000000000000",
+            "client_id": "00000000-0000-0000-0000-000000000000",
+            "site_url": "https://contoso.sharepoint.com/sites/TeamSite",
+            "client_secret_env": "SHAREPOINT_CLIENT_SECRET",
+        },
+    },
+    "gdrive": {
+        "type": "gdrive",
+        "config": {
+            "service_account_key_env": "GDRIVE_SERVICE_ACCOUNT_KEY",
+        },
+    },
 }
 
 _INDEX_TEMPLATES: dict[str, dict[str, object]] = {
@@ -101,7 +131,8 @@ def init(
     source: str = typer.Option(  # noqa: B008
         "confluence",
         "--source",
-        help="Source adapter to scaffold (fs, confluence, github, gitlab, s3, static_url).",
+        help="Source adapter to scaffold (fs, confluence, github, gitlab, s3, "
+        "static_url, notion, jira, sharepoint, gdrive).",
     ),
     index: str = typer.Option(  # noqa: B008
         "qdrant",

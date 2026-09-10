@@ -15,10 +15,15 @@ missing stages use defaults.
 
 ## Which sources are built in?
 
-`fs`, `confluence`, `github`, `gitlab` (self-hosted via `url`), and `s3`
-(SigV4, no boto3, MinIO-compatible). See the README source table for config
-keys. New sources are connectors — see the
-[contributing guide](../CONTRIBUTING.md).
+`fs`, `confluence`, `github`, `gitlab` (self-hosted via `url`), `s3`
+(SigV4, no boto3, MinIO-compatible), `static_url`, `notion` (pages shared
+with a Notion integration), `jira` (issues of a project or JQL query),
+`sharepoint` (files in a site's document library, via Microsoft Graph
+OAuth2 client-credentials), and `gdrive` (files a Google service account
+can see, via Drive API v3 OAuth2 — the one source needing an extra
+dependency, `pip install alvis[gdrive]`, for RSA JWT signing). See the
+README source table for config keys. New sources are connectors — see
+the [contributing guide](../CONTRIBUTING.md).
 
 ## Do I need a GPU or an API key to try it?
 

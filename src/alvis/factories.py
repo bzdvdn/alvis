@@ -36,7 +36,11 @@ from alvis.sources import (
     FilesystemSource,
     GitHubSource,
     GitLabSource,
+    GoogleDriveSource,
+    JiraSource,
+    NotionSource,
     S3Source,
+    SharePointSource,
     StaticUrlSource,
 )
 from alvis.sources.base import Source
@@ -72,8 +76,19 @@ def build_source(
     directly by :class:`alvis.pipeline.stages.FetchStage` to stamp every
     artifact's metadata — it is never passed to a built-in source's
     constructor.
+
+    ``max_bytes`` here is the engine-level cap (``cfg.extract.max_bytes``);
+    a source's own ``config.config`` may *also* declare a per-source
+    ``max_bytes`` (e.g. via ``dsl.github(max_bytes=...)``). The per-source
+    value, when given, wins — it's popped out of ``settings`` first so it
+    is never forwarded twice (as both part of ``**settings`` and the
+    explicit ``max_bytes=`` kwarg below, which previously raised "got
+    multiple values for argument 'max_bytes'").
     """
     settings = {key: value for key, value in config.config.items() if key != "acl"}
+    source_max_bytes = settings.pop("max_bytes", None)
+    if source_max_bytes is not None:
+        max_bytes = source_max_bytes
     if config.type == "fs":
         return FilesystemSource(**settings, max_bytes=max_bytes)
     if config.type == "confluence":
@@ -86,6 +101,14 @@ def build_source(
         return S3Source(**settings, max_bytes=max_bytes)
     if config.type == "static_url":
         return StaticUrlSource(**settings, max_bytes=max_bytes)
+    if config.type == "notion":
+        return NotionSource(**settings)
+    if config.type == "jira":
+        return JiraSource(**settings)
+    if config.type == "sharepoint":
+        return SharePointSource(**settings, max_bytes=max_bytes)
+    if config.type == "gdrive":
+        return GoogleDriveSource(**settings, max_bytes=max_bytes)
     plugin_factory = registry().factory("source", config.type)
     if plugin_factory is not None:
         return plugin_factory(config=config, max_bytes=max_bytes)  # type: ignore[return-value]

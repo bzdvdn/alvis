@@ -92,13 +92,54 @@ set_resolver(...)` before `alvis run`.
 | `gitlab`    | blobs of a project repository, or every repo in a group (REST API; self-hosted OK) | `url`, `project`, `group`, `branch`, `path`, `include_globs`, `exclude_globs`, `project_include_globs`, `project_exclude_globs`, `include_archived`, `api_token_env` |
 | `s3`        | text objects in a bucket (SigV4, no boto3; MinIO-compatible) | `url`, `bucket`, `access_key_env`, `secret_key_env`, `region`, `prefix`, `include_globs`, `exclude_globs` |
 | `static_url`| plain HTML pages served over HTTP(S), no JS needed            | `urls`, `api_token_env`, `max_bytes`, `timeout`                                                  |
+| `notion`    | pages shared with a Notion integration (REST API)             | `api_token_env`                                                                |
+| `jira`      | issues of a project or JQL query (Jira Cloud REST API)        | `url`, `project`, `jql`, `username`, `api_token_env`                          |
+| `sharepoint`| files in a site's document library (Microsoft Graph, OAuth2)  | `tenant_id`, `client_id`, `site_url`, `client_secret_env`, `include_globs`, `exclude_globs` |
+| `gdrive`    | files a service account can see (Drive API v3, OAuth2)        | `service_account_key_env`, `folder_id`, `include_globs`, `exclude_globs` |
 
 Every source accepts `retries`, `retry_backoff`, and `verify`. Every remote
-source (`confluence`, `github`, `gitlab`, `s3`, `static_url`) also accepts
-`max_concurrency` (default 8) — how many document/blob/object/page
-downloads run at once, bounded so a large corpus doesn't hammer the host
-with one request per document; they all reuse one pooled HTTP client, so
-raising it is safe up to whatever the remote host can actually take.
+source (`confluence`, `github`, `gitlab`, `s3`, `static_url`, `notion`,
+`jira`, `sharepoint`, `gdrive`) also accepts `max_concurrency` (default
+8) — how many document/blob/object/page/issue/file downloads run at
+once, bounded so a large corpus doesn't hammer the host with one request
+per document; they all reuse one pooled HTTP client, so raising it is
+safe up to whatever the remote host can actually take.
+
+`notion` renders each page's blocks to a lightweight Markdown
+approximation (headings, lists, quotes, code, paragraphs) — not a
+faithful reproduction of Notion's richer block types (tables, embeds,
+synced blocks, databases as tables). Only pages/databases explicitly
+shared with the integration are visible, by Notion's own access model.
+
+`jira` matches issues via `project` (built into `project = "KEY" ORDER BY
+updated DESC`) or a raw `jql` query for anything `project` can't express;
+uses the classic `/rest/api/2` endpoints, so `description` comes back as
+Jira's own wiki markup ingested as plain text, not API v3's Atlassian
+Document Format. `username` (account email) + `api_token_env` is Jira
+Cloud's Basic auth, same scheme as `confluence`.
+
+`sharepoint` authenticates via OAuth2 client-credentials against Azure AD
+(`tenant_id` + `client_id` + `client_secret_env` — an app registration
+with an admin-consented `Sites.Read.All`, or narrower, Microsoft Graph
+application permission), then walks the site's default document library
+via Graph's delta query. No Microsoft Graph SDK dependency — plain REST,
+like every other source here; the one shared-code addition this needed
+was `HttpClient` gaining a `form` request-body option (OAuth2 token
+exchanges are form-urlencoded, not JSON).
+
+`gdrive` authenticates with a Google service account: a self-signed RS256
+JWT (`service_account_key_env` — the *entire* service-account JSON key,
+client_email + private_key) exchanged for an OAuth2 access token, no
+user/browser in the loop. Unlike every other source, that signing needs
+real RSA — the one connector here with a non-optional-at-runtime
+third-party dependency, `pip install alvis[gdrive]`
+(`cryptography`), rather than the hand-rolled-HTTP approach used
+elsewhere (S3's SigV4 is HMAC, not RSA — the standard library sufficed
+there). `folder_id` scopes to one folder's direct children (not
+recursive in this version). Google-native documents (Docs/Sheets/Slides/
+Forms/Drawings) have no fixed byte content; only Google Docs are
+exported (as plain text) — everything else under
+`application/vnd.google-apps.*` is skipped, not mis-rendered.
 
 **Scoping what gets ingested** — use `prefix`/`path` to restrict a directory or
 subtree server-side, `include_globs` to ingest only matching paths, and
@@ -188,8 +229,8 @@ alvis plugins --plugins ./plugins             # list them
 
 Since a pipeline is just YAML, a ready-made image ships the whole product: a
 `alvis` CLI with every optional extra (documents parsers, pgvector,
-observability) built in. You configure it by mounting files — never by
-rebuilding:
+observability, `gdrive`'s RSA signing) built in. You configure it by
+mounting files — never by rebuilding:
 
 ```bash
 docker build -t alvis:dev .

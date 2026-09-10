@@ -55,6 +55,104 @@ def test_validate_ok_elasticsearch_index(tmp_path: Path) -> None:
     assert "is valid" in result.output
 
 
+def test_validate_ok_notion_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("NOTION_API_TOKEN", "secret")
+    config = tmp_path / "pipeline.yaml"
+    config.write_text(
+        "pipeline:\n"
+        "  source:\n"
+        "    type: notion\n"
+        "    config:\n"
+        "      api_token_env: NOTION_API_TOKEN\n"
+        "  index:\n"
+        "    type: qdrant\n"
+        "    config:\n"
+        "      url: http://localhost:6333\n"
+        "      collection: docs\n",
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["validate", str(config)])
+    assert result.exit_code == 0
+    assert "is valid" in result.output
+
+
+def test_validate_ok_jira_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("JIRA_API_TOKEN", "secret")
+    config = tmp_path / "pipeline.yaml"
+    config.write_text(
+        "pipeline:\n"
+        "  source:\n"
+        "    type: jira\n"
+        "    config:\n"
+        "      url: https://acme.atlassian.net\n"
+        "      project: ENG\n"
+        "      username: you@example.com\n"
+        "      api_token_env: JIRA_API_TOKEN\n"
+        "  index:\n"
+        "    type: qdrant\n"
+        "    config:\n"
+        "      url: http://localhost:6333\n"
+        "      collection: docs\n",
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["validate", str(config)])
+    assert result.exit_code == 0
+    assert "is valid" in result.output
+
+
+def test_validate_ok_sharepoint_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SP_CLIENT_SECRET", "secret")
+    config = tmp_path / "pipeline.yaml"
+    config.write_text(
+        "pipeline:\n"
+        "  source:\n"
+        "    type: sharepoint\n"
+        "    config:\n"
+        "      tenant_id: tenant-1\n"
+        "      client_id: client-1\n"
+        "      site_url: https://contoso.sharepoint.com/sites/TeamSite\n"
+        "      client_secret_env: SP_CLIENT_SECRET\n"
+        "  index:\n"
+        "    type: qdrant\n"
+        "    config:\n"
+        "      url: http://localhost:6333\n"
+        "      collection: docs\n",
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["validate", str(config)])
+    assert result.exit_code == 0
+    assert "is valid" in result.output
+
+
+def test_validate_ok_gdrive_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GDRIVE_KEY", '{"client_email": "x", "private_key": "y"}')
+    config = tmp_path / "pipeline.yaml"
+    config.write_text(
+        "pipeline:\n"
+        "  source:\n"
+        "    type: gdrive\n"
+        "    config:\n"
+        "      service_account_key_env: GDRIVE_KEY\n"
+        "  index:\n"
+        "    type: qdrant\n"
+        "    config:\n"
+        "      url: http://localhost:6333\n"
+        "      collection: docs\n",
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["validate", str(config)])
+    assert result.exit_code == 0
+    assert "is valid" in result.output
+
+
 def test_validate_invalid_structure(tmp_path: Path) -> None:
     config = tmp_path / "pipeline.yaml"
     config.write_text("foo: bar\n", encoding="utf-8")

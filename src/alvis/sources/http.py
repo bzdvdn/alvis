@@ -79,6 +79,7 @@ class HttpClient:
         *,
         query: dict[str, Any] | None = None,
         payload: dict[str, Any] | None = None,
+        form: dict[str, Any] | None = None,
         ok_status: tuple[int, ...] = (200, 201),
         raw: Literal[False] = False,
     ) -> dict[str, Any]: ...
@@ -91,6 +92,7 @@ class HttpClient:
         *,
         query: dict[str, Any] | None = None,
         payload: dict[str, Any] | None = None,
+        form: dict[str, Any] | None = None,
         ok_status: tuple[int, ...] = (200, 201),
         raw: Literal[True],
     ) -> bytes: ...
@@ -102,10 +104,19 @@ class HttpClient:
         *,
         query: dict[str, Any] | None = None,
         payload: dict[str, Any] | None = None,
+        form: dict[str, Any] | None = None,
         ok_status: tuple[int, ...] = (200, 201),
         raw: bool = False,
     ) -> dict[str, Any] | bytes:
-        """Perform a JSON request with retry/backoff; optionally return raw bytes."""
+        """Perform a JSON (or, with ``form``, form-urlencoded) request with
+        retry/backoff; optionally return raw bytes.
+
+        ``form``, when given, sends the request body as
+        ``application/x-www-form-urlencoded`` (``payload`` is ignored) —
+        for the handful of endpoints that require it, e.g. OAuth2 token
+        exchanges. Mutually exclusive with ``payload`` in practice; pass
+        only one.
+        """
         url = self.base_url + path
         client = self._get_client()
         for attempt in range(self.max_retries + 1):
@@ -114,7 +125,8 @@ class HttpClient:
                     method,
                     url,
                     params=query,
-                    json=payload,
+                    json=payload if form is None else None,
+                    data=form,
                     headers=self._headers(method, path, query),
                     timeout=self.timeout,
                 )

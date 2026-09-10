@@ -275,6 +275,160 @@ def static_url(
     )
 
 
+def notion(
+    api_token_env: str,
+    retries: int = 3,
+    retry_backoff: float = 1.0,
+    verify: bool | str = True,
+    max_concurrency: int = 8,
+    acl: list[str] | None = None,
+) -> SourceConfig:
+    """Ingest pages shared with a Notion integration.
+
+    ``api_token_env`` names the env var holding the integration token.
+    Only pages/databases explicitly shared with that integration are
+    visible — Notion's own access model, not a filter alvis applies.
+    ``max_concurrency`` bounds concurrent page-content renders. ``acl``
+    (optional) is a static list of principal strings stamped onto every
+    artifact this source fetches.
+    """
+    return SourceConfig(
+        type="notion",
+        config={
+            "api_token_env": api_token_env,
+            **({"retries": retries} if retries != 3 else {}),
+            **({"retry_backoff": retry_backoff} if retry_backoff != 1.0 else {}),
+            **({"verify": verify} if verify is not True else {}),
+            **({"max_concurrency": max_concurrency} if max_concurrency != 8 else {}),
+            **({"acl": acl} if acl else {}),
+        },
+    )
+
+
+def jira(
+    url: str,
+    project: str | None = None,
+    jql: str | None = None,
+    api_token_env: str | None = None,
+    username: str | None = None,
+    retries: int = 3,
+    retry_backoff: float = 1.0,
+    verify: bool | str = True,
+    max_concurrency: int = 8,
+    acl: list[str] | None = None,
+) -> SourceConfig:
+    """Ingest issues of a Jira project (Jira Cloud REST API v2).
+
+    Pass ``project`` (a project key, e.g. "ENG") for ``project = "ENG"
+    ORDER BY updated DESC``, or ``jql`` for a raw query (takes precedence
+    if both are given). ``username`` (account email) + ``api_token_env``
+    is Jira Cloud's Basic auth scheme, same as Confluence Cloud.
+    ``max_concurrency`` bounds concurrent issue-detail fetches. ``acl``
+    (optional) is a static list of principal strings stamped onto every
+    artifact this source fetches.
+    """
+    if not project and not jql:
+        raise ValueError("jira() requires 'project' or 'jql'")
+    return SourceConfig(
+        type="jira",
+        config={
+            "url": url,
+            **({"project": project} if project else {}),
+            **({"jql": jql} if jql else {}),
+            **({"api_token_env": api_token_env} if api_token_env else {}),
+            **({"username": username} if username else {}),
+            **({"retries": retries} if retries != 3 else {}),
+            **({"retry_backoff": retry_backoff} if retry_backoff != 1.0 else {}),
+            **({"verify": verify} if verify is not True else {}),
+            **({"max_concurrency": max_concurrency} if max_concurrency != 8 else {}),
+            **({"acl": acl} if acl else {}),
+        },
+    )
+
+
+def sharepoint(
+    tenant_id: str,
+    client_id: str,
+    site_url: str,
+    client_secret_env: str,
+    include_globs: list[str] | None = None,
+    exclude_globs: list[str] | None = None,
+    retries: int = 3,
+    retry_backoff: float = 1.0,
+    verify: bool | str = True,
+    max_bytes: int | None = None,
+    max_concurrency: int = 8,
+    acl: list[str] | None = None,
+) -> SourceConfig:
+    """Ingest files from a SharePoint site's document library (Microsoft Graph).
+
+    Authenticates via OAuth2 client-credentials against Azure AD — an app
+    registration (``client_id`` + ``client_secret_env``) with an
+    admin-consented Microsoft Graph application permission
+    (``Sites.Read.All`` or narrower). ``max_bytes`` skips files larger
+    than this; ``max_concurrency`` bounds concurrent downloads. ``acl``
+    (optional) is a static list of principal strings stamped onto every
+    artifact this source fetches.
+    """
+    return SourceConfig(
+        type="sharepoint",
+        config={
+            "tenant_id": tenant_id,
+            "client_id": client_id,
+            "site_url": site_url,
+            "client_secret_env": client_secret_env,
+            **({"include_globs": include_globs} if include_globs else {}),
+            **({"exclude_globs": exclude_globs} if exclude_globs else {}),
+            **({"retries": retries} if retries != 3 else {}),
+            **({"retry_backoff": retry_backoff} if retry_backoff != 1.0 else {}),
+            **({"verify": verify} if verify is not True else {}),
+            **({"max_bytes": max_bytes} if max_bytes is not None else {}),
+            **({"max_concurrency": max_concurrency} if max_concurrency != 8 else {}),
+            **({"acl": acl} if acl else {}),
+        },
+    )
+
+
+def gdrive(
+    service_account_key_env: str,
+    folder_id: str | None = None,
+    include_globs: list[str] | None = None,
+    exclude_globs: list[str] | None = None,
+    retries: int = 3,
+    retry_backoff: float = 1.0,
+    verify: bool | str = True,
+    max_bytes: int | None = None,
+    max_concurrency: int = 8,
+    acl: list[str] | None = None,
+) -> SourceConfig:
+    """Ingest files a Google service account can see (Drive API v3).
+
+    ``service_account_key_env`` names the env var holding the *entire*
+    service-account JSON key (client_email + private_key). Requires
+    ``pip install alvis[gdrive]`` (RSA-signs the auth JWT via
+    ``cryptography`` — the one connector here needing real crypto).
+    ``folder_id`` scopes to one folder's direct children (not recursive).
+    ``max_bytes`` skips files larger than this; ``max_concurrency`` bounds
+    concurrent downloads. ``acl`` (optional) is a static list of principal
+    strings stamped onto every artifact this source fetches.
+    """
+    return SourceConfig(
+        type="gdrive",
+        config={
+            "service_account_key_env": service_account_key_env,
+            **({"folder_id": folder_id} if folder_id else {}),
+            **({"include_globs": include_globs} if include_globs else {}),
+            **({"exclude_globs": exclude_globs} if exclude_globs else {}),
+            **({"retries": retries} if retries != 3 else {}),
+            **({"retry_backoff": retry_backoff} if retry_backoff != 1.0 else {}),
+            **({"verify": verify} if verify is not True else {}),
+            **({"max_bytes": max_bytes} if max_bytes is not None else {}),
+            **({"max_concurrency": max_concurrency} if max_concurrency != 8 else {}),
+            **({"acl": acl} if acl else {}),
+        },
+    )
+
+
 def chunk(
     strategy: str = "auto",
     max_tokens: int = 500,
