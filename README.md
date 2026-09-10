@@ -96,6 +96,7 @@ set_resolver(...)` before `alvis run`.
 | `jira`      | issues of a project or JQL query (Jira Cloud REST API)        | `url`, `project`, `jql`, `username`, `api_token_env`                          |
 | `sharepoint`| files in a site's document library (Microsoft Graph, OAuth2)  | `tenant_id`, `client_id`, `site_url`, `client_secret_env`, `include_globs`, `exclude_globs` |
 | `gdrive`    | files a service account can see (Drive API v3, OAuth2)        | `service_account_key_env`, `folder_id`, `include_globs`, `exclude_globs` |
+| `none`      | no documents, ever — for query-only pipelines                 | (none)                                                                          |
 
 Every source accepts `retries`, `retry_backoff`, and `verify`. Every remote
 source (`confluence`, `github`, `gitlab`, `s3`, `static_url`, `notion`,
@@ -140,6 +141,14 @@ recursive in this version). Google-native documents (Docs/Sheets/Slides/
 Forms/Drawings) have no fixed byte content; only Google Docs are
 exported (as plain text) — everything else under
 `application/vnd.google-apps.*` is skipped, not mis-rendered.
+
+`none` (`dsl.none()`) has no config and produces zero documents, always.
+It exists for pipelines built only to `query`/`answer`/`evaluate` an
+already-ingested index — `PipelineConfig.source` is required, but those
+functions never read it. Running a `none` pipeline (`alvis run`) is a
+harmless no-op, not an error, so there's no need for a real (if unused)
+source just to satisfy the schema — see
+[Embedding in your application](#embedding-in-your-application) below.
 
 **Scoping what gets ingested** — use `prefix`/`path` to restrict a directory or
 subtree server-side, `include_globs` to ingest only matching paths, and
@@ -531,6 +540,22 @@ Parallel pipelines share one event loop; each pipeline owns its source and
 index adapters (no shared mutable state). If multiple pipelines write to the
 same Qdrant collection, give them distinct collections or source identities so
 the per-source `reconcile` pass does not prune each other's points.
+
+An app that only ever queries an index another process ingests (a chat
+backend, say) still needs a `PipelineConfig` — `query`/`answer`/`evaluate`
+read its `embed`/`index` stages — but never its `source`. Use `dsl.none()`
+rather than a real source you'll never run:
+
+```python
+from alvis import dsl, query
+
+query_only_config = dsl.pipeline(
+    dsl.none(),
+    embed=dsl.embed_openai(base_url="...", model="...", api_token_env="OPENAI_API_KEY"),
+    index=dsl.qdrant(url="http://localhost:6333", collection="alvis_docs"),
+)
+query(query_only_config, "how do I install alvis?")
+```
 
 ## Describing pipelines in Python
 

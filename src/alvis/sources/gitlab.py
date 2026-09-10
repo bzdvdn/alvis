@@ -219,16 +219,28 @@ class GitLabSource:
         items: list[dict[str, Any]] = []
         page = 1
         while True:
-            batch = await self.client.request(
-                "GET",
-                f"/projects/{project}/repository/tree",
-                query={
-                    "ref": self.branch,
-                    "recursive": "true",
-                    "per_page": str(self.per_page),
-                    "page": str(page),
-                },
-            )
+            try:
+                batch = await self.client.request(
+                    "GET",
+                    f"/projects/{project}/repository/tree",
+                    query={
+                        "ref": self.branch,
+                        "recursive": "true",
+                        "per_page": str(self.per_page),
+                        "page": str(page),
+                    },
+                )
+            except SourceError as exc:
+                if exc.status_code == 404 and page == 1 and self.group is not None:
+                    # A project with no commits on `branch` (often an empty
+                    # repo with no branches at all) 404s here. Only tolerated
+                    # for a `group` source, where one member project must not
+                    # abort every other project's listing — treated as having
+                    # no files. An explicitly configured `project` 404ing is
+                    # far more likely a real misconfiguration (wrong project/
+                    # branch), so that still raises.
+                    return []
+                raise
             items.extend(cast(list[dict[str, Any]], batch))
             if len(batch) < self.per_page:
                 break

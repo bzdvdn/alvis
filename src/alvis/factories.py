@@ -38,6 +38,7 @@ from alvis.sources import (
     GitLabSource,
     GoogleDriveSource,
     JiraSource,
+    NoneSource,
     NotionSource,
     S3Source,
     SharePointSource,
@@ -47,7 +48,17 @@ from alvis.sources.base import Source
 
 
 def source_identity(config: SourceConfig) -> str:
-    """Stable identifier of a source for point namespacing in the index."""
+    """Stable identifier of a source for point namespacing in the index.
+
+    Two sources sharing an identity share reconcile state: each run treats
+    the other's points as stale and deletes them. Every branch here must
+    therefore include whatever config actually distinguishes one instance
+    of that source type from another — a bare ``config.type`` fallback is
+    only safe for source types where a single config can't meaningfully
+    vary (e.g. there's exactly one legitimate ``static_url`` shape, but
+    two ``gitlab`` *groups*, two ``jira`` projects, or two ``notion``
+    workspaces are common and must not collide).
+    """
     if config.type == "fs":
         return f"fs:{config.config.get('path', '')}"
     if config.type == "confluence":
@@ -56,12 +67,27 @@ def source_identity(config: SourceConfig) -> str:
         return f"github:{config.config.get('repo', '')}"
     if config.type == "gitlab":
         host = config.config.get("url", "https://gitlab.com")
-        return f"gitlab:{config.config.get('project', '')}@{host}"
+        project = config.config.get("project")
+        group = config.config.get("group")
+        scope = project or (f"group:{group}" if group else "")
+        return f"gitlab:{scope}@{host}"
     if config.type == "s3":
         return (
             f"s3:{config.config.get('bucket', '')}"
             f"@{config.config.get('url', '')}"
         )
+    if config.type == "notion":
+        return f"notion:{config.config.get('api_token_env', '')}"
+    if config.type == "jira":
+        scope = config.config.get("project") or config.config.get("jql", "")
+        return f"jira:{scope}@{config.config.get('url', '')}"
+    if config.type == "sharepoint":
+        return f"sharepoint:{config.config.get('site_url', '')}"
+    if config.type == "gdrive":
+        scope = config.config.get("folder_id") or config.config.get(
+            "service_account_key_env", ""
+        )
+        return f"gdrive:{scope}"
     return config.type
 
 
@@ -109,6 +135,8 @@ def build_source(
         return SharePointSource(**settings, max_bytes=max_bytes)
     if config.type == "gdrive":
         return GoogleDriveSource(**settings, max_bytes=max_bytes)
+    if config.type == "none":
+        return NoneSource()
     plugin_factory = registry().factory("source", config.type)
     if plugin_factory is not None:
         return plugin_factory(config=config, max_bytes=max_bytes)  # type: ignore[return-value]

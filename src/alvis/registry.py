@@ -47,6 +47,7 @@ KNOWN_SOURCES: set[str] = {
     "jira",
     "sharepoint",
     "gdrive",
+    "none",
 }
 KNOWN_EXTRACT_STRATEGIES: set[str] = {"auto"}
 KNOWN_CHUNK_STRATEGIES: set[str] = {"auto", "sections", "size"}

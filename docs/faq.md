@@ -70,6 +70,17 @@ histograms per stage, exportable as Prometheus text with
 `alvis[observability]` installed. No extra dependency is required for the
 basic in-process store.
 
+## I only want to query an index, not ingest anything — do I need a real source?
+
+No. `PipelineConfig.source` is a required field, but `query`/`query_async`/
+`answer`/`answer_async`/`evaluate`/`evaluate_async` never read it — only
+`run`/`run_async` do. Use `dsl.none()` (`type: none` in YAML): a source
+with zero documents, always. Running a `none` pipeline is a harmless
+no-op, not an error, so there's no risk in an app that only ever queries
+accidentally calling `run()` on it, unlike a throwaway real source (e.g.
+`dsl.fs(".")`) that could ingest whatever happens to be in the current
+directory.
+
 ## Which index should I pick?
 
 - `memory` — tests and prototypes.

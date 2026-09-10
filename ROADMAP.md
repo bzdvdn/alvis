@@ -176,6 +176,19 @@ which needed a contract-breaking change.
   (`cryptography`, `pip install alvis[gdrive]`) rather than hand-rolled
   HTTP, since RSA signing has no stdlib primitive (unlike `s3`'s SigV4,
   which is HMAC). Slack remains open.
+- [x] `source_identity` collision fixes, found via a real downstream
+  project: `gitlab` group sources (and every source type added this
+  cycle — `notion`/`jira`/`sharepoint`/`gdrive`) fell back to identical
+  identities across genuinely different configs, so two pipelines sharing
+  an index would reconcile-delete each other's points. Also: a `gitlab`
+  group source aborted entirely when one member project had no commits on
+  the configured branch (a 404), instead of skipping just that project.
+- [x] `dsl.none()` / `type: none` source — zero documents, always, for
+  pipelines built only to `query`/`answer`/`evaluate` an already-ingested
+  index (those never read `PipelineConfig.source`, but it's a required
+  field). Replaces the previous idiom of a throwaway real source (e.g.
+  `dsl.fs(".")`) that coincidentally worked but could do something
+  unintended if `run()` were ever accidentally called on it.
 
 ---
 

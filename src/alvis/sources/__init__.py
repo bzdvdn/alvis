@@ -8,6 +8,7 @@ from alvis.sources.gdrive import GoogleDriveSource
 from alvis.sources.github import GitHubSource
 from alvis.sources.gitlab import GitLabSource
 from alvis.sources.jira import JiraSource
+from alvis.sources.none import NoneSource
 from alvis.sources.notion import NotionSource
 from alvis.sources.s3 import S3Source
 from alvis.sources.sharepoint import SharePointSource
@@ -20,6 +21,7 @@ __all__ = [
     "GitLabSource",
     "GoogleDriveSource",
     "JiraSource",
+    "NoneSource",
     "NotionSource",
     "S3Source",
     "SharePointSource",

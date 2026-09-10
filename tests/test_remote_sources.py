@@ -213,6 +213,53 @@ async def test_gitlab_group_traverses_all_projects() -> None:
     }
 
 
+async def test_gitlab_group_tolerates_one_branchless_project() -> None:
+    """Regression: a project in the group with no commits on `branch` (e.g.
+    an empty repo with no branches at all) 404s its tree listing — that
+    must not abort every other project's listing, only skip that one."""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raw = request.url.raw_path.decode().split("?")[0]
+        if "/groups/" in request.url.path and request.url.path.endswith("/projects"):
+            return httpx.Response(
+                200,
+                json=[
+                    {"path_with_namespace": "grp/empty"},
+                    {"path_with_namespace": "grp/docs"},
+                ],
+            )
+        if raw.endswith("/repository/tree"):
+            proj = raw.split("/projects/")[1].split("/repository")[0]
+            if proj == "grp%2Fempty":
+                return httpx.Response(404, json={"message": "404 Tree Not Found"})
+            return httpx.Response(200, json=[{"id": "d1", "type": "blob", "path": "README.md"}])
+        if raw.endswith("/blobs/d1/raw"):
+            return httpx.Response(200, content=b"# Docs")
+        return httpx.Response(500, json={})
+
+    source = GitLabSource(group="grp", transport=httpx.MockTransport(handler))
+    artifacts = await source.fetch()
+
+    assert [a.metadata["path"] for a in artifacts] == ["README.md"]
+
+
+async def test_gitlab_single_project_404_still_raises() -> None:
+    """Unlike a `group` source, an explicitly configured `project` 404ing
+    is far more likely a real misconfiguration — it must still raise, not
+    silently return zero documents."""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raw = request.url.raw_path.decode().split("?")[0]
+        if raw.endswith("/repository/tree"):
+            return httpx.Response(404, json={"message": "404 Tree Not Found"})
+        return httpx.Response(500, json={})
+
+    source = GitLabSource(project="grp/missing-branch", transport=httpx.MockTransport(handler))
+
+    with pytest.raises(SourceError):
+        await source.fetch()
+
+
 async def test_gitlab_group_project_globs_filter() -> None:
     seen: list[str] = []
 

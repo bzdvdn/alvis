@@ -429,6 +429,21 @@ def gdrive(
     )
 
 
+def none() -> SourceConfig:
+    """A source with no documents — for pipelines built only to
+    ``query``/``answer``/``evaluate`` an already-ingested index, never
+    ``run``. ``PipelineConfig.source`` is required, but
+    ``query_async``/``answer_async``/``evaluate_async`` never read it —
+    this is the explicit, safe value to put there instead of a throwaway
+    real source (e.g. ``dsl.fs(".")``, which coincidentally "works" and
+    would ingest whatever's in the current directory if ``run()`` were
+    ever accidentally called on it). Running a ``none`` pipeline is a
+    harmless no-op, not an error — "no documents" is a legitimate state
+    here.
+    """
+    return SourceConfig(type="none", config={})
+
+
 def chunk(
     strategy: str = "auto",
     max_tokens: int = 500,
