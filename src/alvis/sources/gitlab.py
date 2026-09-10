@@ -7,6 +7,7 @@ from urllib.parse import quote
 
 import httpx
 
+from alvis._concurrency import gather_bounded
 from alvis.core.models import Artifact, DocumentMeta
 from alvis.sources.base import SourceError
 from alvis.sources.content_types import content_type, is_ingestible, matches_globs
@@ -55,9 +56,13 @@ class GitLabSource:
         per_page: int = 100,
         url: str = "https://gitlab.com",
         max_bytes: int | None = None,
+        max_concurrency: int = 8,
     ) -> None:
         if project is None and group is None:
             raise ValueError("gitlab source requires 'project' or 'group'")
+        if max_concurrency < 1:
+            raise ValueError("max_concurrency must be >= 1")
+        self.max_concurrency = max_concurrency
         if url.endswith("/api/v4"):
             url = url[: -len("/api/v4")]
         self.web_base = url.rstrip("/")
@@ -152,9 +157,11 @@ class GitLabSource:
     async def fetch(self, *, uris: set[str] | None = None) -> list[Artifact]:
         """Fetch the wanted text blobs across the resolved projects.
 
-        With ``uris``, only the given blob URIs are downloaded.
+        With ``uris``, only the given blob URIs are downloaded. Blob
+        downloads run concurrently across all wanted blobs (any project),
+        bounded by ``max_concurrency``.
         """
-        artifacts: list[Artifact] = []
+        wanted: list[tuple[str, str, str, dict[str, Any]]] = []
         for project in await self._resolve_projects():
             encoded = quote(project, safe="")
             web = quote(project, safe="/")
@@ -163,32 +170,41 @@ class GitLabSource:
                 uri = _blob_uri(self.web_base, web, self.branch, file_path)
                 if uris is not None and uri not in uris:
                     continue
-                try:
-                    blob = await self.client.request(
-                        "GET",
-                        f"/projects/{encoded}/repository/blobs/{item['id']}/raw",
-                        ok_status=(200,),
-                        raw=True,
-                    )
-                except SourceError as exc:
-                    if exc.status_code == 413:
-                        continue  # oversized blob skipped, others abort the run
-                    raise
-                artifacts.append(
-                    Artifact(
-                        step_id=item["id"],
-                        uri=uri,
-                        content_type=content_type(file_path),
-                        data=blob,
-                        metadata={
-                            "path": file_path,
-                            "title": file_path.rsplit("/", 1)[-1],
-                            "documentId": item["id"],
-                            "project": project,
-                        },
-                    )
+                wanted.append((project, encoded, uri, item))
+
+        async def _fetch_one(
+            entry: tuple[str, str, str, dict[str, Any]],
+        ) -> Artifact | None:
+            project, encoded, uri, item = entry
+            file_path = item["path"]
+            try:
+                blob = await self.client.request(
+                    "GET",
+                    f"/projects/{encoded}/repository/blobs/{item['id']}/raw",
+                    ok_status=(200,),
+                    raw=True,
                 )
-        return artifacts
+            except SourceError as exc:
+                if exc.status_code == 413:
+                    return None  # oversized blob skipped, others abort the run
+                raise
+            return Artifact(
+                step_id=item["id"],
+                uri=uri,
+                content_type=content_type(file_path),
+                data=blob,
+                metadata={
+                    "path": file_path,
+                    "title": file_path.rsplit("/", 1)[-1],
+                    "documentId": item["id"],
+                    "project": project,
+                },
+            )
+
+        results = await gather_bounded(
+            wanted, _fetch_one, max_concurrency=self.max_concurrency
+        )
+        return [artifact for artifact in results if artifact is not None]
 
     async def _tree_items(self, project: str) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []

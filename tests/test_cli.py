@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -453,12 +454,14 @@ def test_run_watch_implies_incremental(tmp_path: Path, monkeypatch) -> None:
     config.write_text(_fs_pipeline(corpus), encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    import alvis.cli as cli
-
     def _interrupt(*_args, **_kwargs):
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(cli.asyncio, "sleep", _interrupt)
+    # `run --watch` calls the real `asyncio` module, wherever `alvis.cli._run`
+    # imported it from — patching the module object directly (rather than an
+    # attribute on `alvis.cli`) affects it regardless of which submodule holds
+    # the `run` command's implementation.
+    monkeypatch.setattr(asyncio, "sleep", _interrupt)
     result = runner.invoke(
         app, ["run", str(config), "--watch", "--interval", "0.001"]
     )
@@ -487,7 +490,7 @@ def test_status_text_render_shows_run(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_status_probe_unreachable_index(tmp_path: Path, monkeypatch) -> None:
-    import alvis.cli as cli
+    import alvis.cli._status as status_cmd
 
     corpus = tmp_path / "corpus"
     corpus.mkdir()
@@ -503,7 +506,7 @@ def test_status_probe_unreachable_index(tmp_path: Path, monkeypatch) -> None:
         def __getattr__(self, name: str) -> object:
             raise ConnectionError("down")
 
-    monkeypatch.setattr(cli, "build_indexer", lambda _index: _Unreachable())
+    monkeypatch.setattr(status_cmd, "build_indexer", lambda _index: _Unreachable())
     monkeypatch.chdir(tmp_path)
 
     result = runner.invoke(

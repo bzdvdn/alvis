@@ -40,12 +40,14 @@ from alvis.config.models import (
 def fs(
     path: str | Path,
     pattern: str | None = None,
+    max_bytes: int | None = None,
     acl: list[str] | None = None,
 ) -> SourceConfig:
     """Ingest text files under a directory (optionally matching ``pattern``).
 
-    ``acl`` (optional) is a static list of principal strings stamped onto
-    every artifact this source fetches — see ``docs/schema.md`` and
+    ``max_bytes`` skips files larger than this. ``acl`` (optional) is a
+    static list of principal strings stamped onto every artifact this
+    source fetches — see ``docs/schema.md`` and
     :class:`alvis.pipeline.stages.FetchStage`.
     """
     return SourceConfig(
@@ -53,6 +55,7 @@ def fs(
         config={
             "path": str(path),
             **({"pattern": pattern} if pattern else {}),
+            **({"max_bytes": max_bytes} if max_bytes is not None else {}),
             **({"acl": acl} if acl else {}),
         },
     )
@@ -66,10 +69,12 @@ def confluence(
     retries: int = 3,
     retry_backoff: float = 1.0,
     verify: bool | str = True,
+    max_concurrency: int = 8,
     acl: list[str] | None = None,
 ) -> SourceConfig:
     """Ingest pages of a Confluence space via its REST API.
 
+    ``max_concurrency`` bounds concurrent page-expansion requests.
     ``acl`` (optional) is a static list of principal strings stamped onto
     every artifact this source fetches — see ``docs/schema.md``.
     """
@@ -83,6 +88,7 @@ def confluence(
             **({"retries": retries} if retries != 3 else {}),
             **({"retry_backoff": retry_backoff} if retry_backoff != 1.0 else {}),
             **({"verify": verify} if verify is not True else {}),
+            **({"max_concurrency": max_concurrency} if max_concurrency != 8 else {}),
             **({"acl": acl} if acl else {}),
         },
     )
@@ -98,12 +104,16 @@ def github(
     retries: int = 3,
     retry_backoff: float = 1.0,
     verify: bool | str = True,
+    max_bytes: int | None = None,
+    max_concurrency: int = 8,
     acl: list[str] | None = None,
 ) -> SourceConfig:
     """Ingest blobs of a GitHub repository tree.
 
-    ``acl`` (optional) is a static list of principal strings stamped onto
-    every artifact this source fetches — see ``docs/schema.md``.
+    ``max_bytes`` skips blobs larger than this. ``max_concurrency`` bounds
+    concurrent blob downloads. ``acl`` (optional) is a static list of
+    principal strings stamped onto every artifact this source fetches —
+    see ``docs/schema.md``.
     """
     return SourceConfig(
         type="github",
@@ -117,6 +127,8 @@ def github(
             **({"retries": retries} if retries != 3 else {}),
             **({"retry_backoff": retry_backoff} if retry_backoff != 1.0 else {}),
             **({"verify": verify} if verify is not True else {}),
+            **({"max_bytes": max_bytes} if max_bytes is not None else {}),
+            **({"max_concurrency": max_concurrency} if max_concurrency != 8 else {}),
             **({"acl": acl} if acl else {}),
         },
     )
@@ -138,6 +150,8 @@ def gitlab(
     retries: int = 3,
     retry_backoff: float = 1.0,
     verify: bool | str = True,
+    max_bytes: int | None = None,
+    max_concurrency: int = 8,
     acl: list[str] | None = None,
 ) -> SourceConfig:
     """Ingest blobs of a GitLab project (works with self-hosted instances).
@@ -145,8 +159,10 @@ def gitlab(
     Pass ``project`` for a single repository, or ``group`` to traverse every
     project in a group. Use ``project_include_globs`` / ``project_exclude_globs``
     to narrow which group repositories are ingested (matched against the full
-    ``group/project`` path). ``acl`` (optional) is a static list of principal
-    strings stamped onto every artifact this source fetches.
+    ``group/project`` path). ``max_bytes`` skips blobs larger than this;
+    ``max_concurrency`` bounds concurrent blob downloads. ``acl`` (optional)
+    is a static list of principal strings stamped onto every artifact this
+    source fetches.
     """
     if project is None and group is None:
         raise ValueError("gitlab() requires 'project' or 'group'")
@@ -176,6 +192,8 @@ def gitlab(
             **({"retries": retries} if retries != 3 else {}),
             **({"retry_backoff": retry_backoff} if retry_backoff != 1.0 else {}),
             **({"verify": verify} if verify is not True else {}),
+            **({"max_bytes": max_bytes} if max_bytes is not None else {}),
+            **({"max_concurrency": max_concurrency} if max_concurrency != 8 else {}),
             **({"acl": acl} if acl else {}),
         },
     )
@@ -193,12 +211,15 @@ def s3(
     retries: int = 3,
     retry_backoff: float = 1.0,
     verify: bool | str = True,
+    max_bytes: int | None = None,
+    max_concurrency: int = 8,
     acl: list[str] | None = None,
 ) -> SourceConfig:
     """Ingest text objects from an S3-compatible bucket (SigV4, no boto3).
 
-    ``acl`` (optional) is a static list of principal strings stamped onto
-    every artifact this source fetches.
+    ``max_bytes`` skips objects larger than this. ``max_concurrency`` bounds
+    concurrent object downloads. ``acl`` (optional) is a static list of
+    principal strings stamped onto every artifact this source fetches.
     """
     return SourceConfig(
         type="s3",
@@ -214,6 +235,8 @@ def s3(
             **({"retries": retries} if retries != 3 else {}),
             **({"retry_backoff": retry_backoff} if retry_backoff != 1.0 else {}),
             **({"verify": verify} if verify is not True else {}),
+            **({"max_bytes": max_bytes} if max_bytes is not None else {}),
+            **({"max_concurrency": max_concurrency} if max_concurrency != 8 else {}),
             **({"acl": acl} if acl else {}),
         },
     )
@@ -227,12 +250,14 @@ def static_url(
     retries: int = 3,
     retry_backoff: float = 1.0,
     verify: bool | str = True,
+    max_concurrency: int = 8,
     acl: list[str] | None = None,
 ) -> SourceConfig:
     """Ingest plain HTML (or other text) pages served over HTTP(S), no JS.
 
-    ``acl`` (optional) is a static list of principal strings stamped onto
-    every artifact this source fetches.
+    ``max_concurrency`` bounds concurrent page downloads. ``acl``
+    (optional) is a static list of principal strings stamped onto every
+    artifact this source fetches.
     """
     return SourceConfig(
         type="static_url",
@@ -244,6 +269,7 @@ def static_url(
             **({"retries": retries} if retries != 3 else {}),
             **({"retry_backoff": retry_backoff} if retry_backoff != 1.0 else {}),
             **({"verify": verify} if verify is not True else {}),
+            **({"max_concurrency": max_concurrency} if max_concurrency != 8 else {}),
             **({"acl": acl} if acl else {}),
         },
     )
@@ -294,6 +320,7 @@ def embed_openai(
     model: str,
     api_token_env: str | None = None,
     batch_size: int = 32,
+    max_concurrency: int = 4,
     retries: int = 3,
     retry_backoff: float = 1.0,
     verify: bool | str = True,
@@ -303,8 +330,9 @@ def embed_openai(
 
     Requires the endpoint to return OpenAI's response shape
     (``data[].embedding``); ``api_token_env`` is sent as ``Bearer``.
-    ``cache`` enables embedding reuse: ``True`` caches in memory, a
-    ``{"path": "..."}`` dict persists to disk across runs.
+    ``max_concurrency`` bounds how many ``/embeddings`` batches are in
+    flight at once. ``cache`` enables embedding reuse: ``True`` caches in
+    memory, a ``{"path": "..."}`` dict persists to disk across runs.
     """
     return EmbedConfig(
         type="openai",
@@ -313,6 +341,7 @@ def embed_openai(
             "model": model,
             **({"api_token_env": api_token_env} if api_token_env else {}),
             **({"batch_size": batch_size} if batch_size != 32 else {}),
+            **({"max_concurrency": max_concurrency} if max_concurrency != 4 else {}),
             **({"retries": retries} if retries != 3 else {}),
             **({"retry_backoff": retry_backoff} if retry_backoff != 1.0 else {}),
             **({"verify": verify} if verify is not True else {}),

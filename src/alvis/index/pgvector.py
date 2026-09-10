@@ -28,10 +28,15 @@ from typing import Any
 
 from alvis.core.ids import point_id
 from alvis.core.models import Chunk, SearchHit
+from alvis.secrets import resolve_secret
 
 
 def _vector_literal(vector: list[float]) -> str:
     return "[" + ",".join(repr(float(value)) for value in vector) + "]"
+
+
+_UPSERT_BATCH_SIZE = 500
+"""Rows per multi-row ``INSERT`` in :meth:`PgVectorIndex.upsert_batch`."""
 
 
 _PSYCOPG = importlib.util.find_spec("psycopg") is not None
@@ -58,11 +63,9 @@ class PgVectorIndex:
         if dsn and dsn_env:
             raise ValueError("provide either dsn or dsn_env, not both")
         if dsn_env:
-            import os
-
-            dsn = os.environ.get(dsn_env)
+            dsn = resolve_secret(dsn_env)
             if not dsn:
-                raise ValueError(f"environment variable {dsn_env!r} is not set")
+                raise ValueError(f"secret {dsn_env!r} is not set")
         if not dsn:
             raise ValueError("pgvector index requires a 'dsn' (or 'dsn_env')")
         self.dsn = dsn
@@ -118,6 +121,13 @@ class PgVectorIndex:
             ")"
         ).format(self._table(), _psql().Literal(dimensions))
         await connection.execute(create)
+        index = _psql().SQL(
+            "CREATE INDEX IF NOT EXISTS {} ON {} USING GIN (to_tsvector('english', text))"
+        ).format(
+            _psql().Identifier(f"{self.table}_text_fts"),
+            self._table(),
+        )
+        await connection.execute(index)
 
     async def upsert(
         self,
@@ -155,6 +165,52 @@ class PgVectorIndex:
                 metadata,
             ),
         )
+
+    async def upsert_batch(
+        self,
+        items: Sequence[tuple[Chunk, list[float], str]],
+        *,
+        source_id: str,
+    ) -> None:
+        """Upsert many chunk rows via multi-row ``INSERT`` statements.
+
+        The shared connection already removed the per-call connect/auth
+        round trip (see module docstring); this removes the per-*row*
+        statement round trip on top of that — one multi-row ``INSERT`` per
+        :data:`_UPSERT_BATCH_SIZE` chunks instead of one per chunk.
+        """
+        if not items:
+            return
+        await self._ensure_table(len(items[0][1]))
+        connection = await self._get_connection()
+        for start in range(0, len(items), _UPSERT_BATCH_SIZE):
+            batch = items[start : start + _UPSERT_BATCH_SIZE]
+            placeholders = ", ".join(["(%s, %s, %s, %s, %s, %s::vector, %s::jsonb)"] * len(batch))
+            params: list[object] = []
+            for chunk, vector, artifact_hash in batch:
+                params.extend(
+                    (
+                        str(point_id(chunk.source_uri, chunk.text)),
+                        chunk.source_uri,
+                        chunk.text,
+                        source_id,
+                        artifact_hash,
+                        _vector_literal(vector),
+                        json.dumps(chunk.metadata),
+                    )
+                )
+            statement = _psql().SQL(
+                "INSERT INTO {} (id, source_uri, text, source, artifact_hash, embedding, metadata) "
+                "VALUES " + placeholders + " "
+                "ON CONFLICT (id) DO UPDATE SET "
+                "source_uri = EXCLUDED.source_uri, "
+                "text = EXCLUDED.text, "
+                "source = EXCLUDED.source, "
+                "artifact_hash = EXCLUDED.artifact_hash, "
+                "embedding = EXCLUDED.embedding, "
+                "metadata = EXCLUDED.metadata"
+            ).format(self._table())
+            await connection.execute(statement, params)
 
     async def reconcile(
         self,
@@ -232,6 +288,64 @@ class PgVectorIndex:
         ).format(self._table(), where)
         connection = await self._get_connection()
         cursor = await connection.execute(statement, (*params, top_k))
+        rows = await cursor.fetchall()
+        return [
+            SearchHit(
+                text=row[0],
+                source_uri=row[1],
+                metadata=dict(row[2]),
+                score=float(row[3]),
+            )
+            for row in rows
+        ]
+
+    async def keyword_search(
+        self,
+        text: str,
+        *,
+        top_k: int = 5,
+        filters: Mapping[str, str] | None = None,
+        principals: Sequence[str] | None = None,
+    ) -> list[SearchHit]:
+        """Full-text ranking via Postgres ``tsvector``/``ts_rank``, best first.
+
+        ``to_tsvector('english', text) @@ plainto_tsquery(...)`` restricts to
+        matching rows server-side (backed by the GIN index from
+        :meth:`_ensure_table`); ``ts_rank`` orders them. Unlike ``memory``/
+        ``sqlite`` (which BM25-score the whole corpus in Python), ranking
+        happens in the database — no local scoring pass needed.
+        ``filters``/``principals`` apply the same server-side clauses as
+        :meth:`search`.
+        """
+        select_params: list[object] = [text]
+        conditions: list[Any] = [
+            _psql().SQL("to_tsvector('english', text) @@ plainto_tsquery('english', %s)")
+        ]
+        where_params: list[object] = [text]
+        if filters:
+            conditions.append(_psql().SQL("metadata @> %s::jsonb"))
+            where_params.append(json.dumps(dict(filters)))
+        if principals is not None:
+            conditions.append(
+                _psql().SQL(
+                    "(NOT (metadata ? 'acl') OR jsonb_array_length(metadata->'acl') = 0 "
+                    "OR metadata->'acl' ?| %s::text[])"
+                )
+            )
+            where_params.append(list(principals))
+        where = _psql().SQL(" AND ").join(conditions)
+        statement = _psql().SQL(
+            "SELECT text, source_uri, metadata, "
+            "ts_rank(to_tsvector('english', text), plainto_tsquery('english', %s)) AS score "
+            "FROM {} WHERE {} ORDER BY score DESC LIMIT %s"
+        ).format(self._table(), where)
+        connection = await self._get_connection()
+        try:
+            cursor = await connection.execute(
+                statement, (*select_params, *where_params, top_k)
+            )
+        except Exception:
+            return []
         rows = await cursor.fetchall()
         return [
             SearchHit(

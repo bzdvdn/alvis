@@ -5,13 +5,13 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-import os
 import time
 from collections.abc import Callable
 from typing import Any, Literal, overload
 
 import httpx
 
+from alvis.secrets import resolve_secret
 from alvis.sources.base import SourceError
 from alvis.transport import RETRYABLE_STATUS, backoff_delay
 
@@ -54,10 +54,10 @@ class HttpClient:
     def _headers(self, method: str, path: str, query: dict[str, Any] | None) -> dict[str, str]:
         headers = {"Accept": "application/json"}
         if self.api_token_env:
-            token = os.environ.get(self.api_token_env)
+            token = resolve_secret(self.api_token_env)
             if not token:
                 raise SourceError(
-                    f"environment variable {self.api_token_env!r} is not set "
+                    f"secret {self.api_token_env!r} is not set "
                     f"(configured via api_token_env)"
                 )
             if self.username:

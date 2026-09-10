@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 
 import httpx
@@ -153,7 +154,7 @@ async def test_missing_token_env_raises(monkeypatch: pytest.MonkeyPatch) -> None
         api_token_env="URL_SOURCE_TOKEN",
         transport=_transport(),
     )
-    with pytest.raises(SourceError, match="environment variable"):
+    with pytest.raises(SourceError, match="secret"):
         await source.fetch()
 
 
@@ -187,3 +188,30 @@ async def test_listing_fallback_skips_page_over_byte_cap() -> None:
         transport=httpx.MockTransport(handler),
     )
     assert await source.list_documents() == []
+
+
+async def test_fetch_bounds_concurrent_downloads() -> None:
+    urls = [f"https://docs.example.com/{i}" for i in range(6)]
+    in_flight = 0
+    peak_in_flight = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal in_flight, peak_in_flight
+        in_flight += 1
+        peak_in_flight = max(peak_in_flight, in_flight)
+        await asyncio.sleep(0.01)
+        in_flight -= 1
+        return httpx.Response(200, content=_HTML)
+
+    source = StaticUrlSource(
+        urls=urls, max_concurrency=2, transport=httpx.MockTransport(handler)
+    )
+    artifacts = await source.fetch()
+
+    assert peak_in_flight == 2
+    assert [a.uri for a in artifacts] == urls
+
+
+def test_rejects_max_concurrency_below_one() -> None:
+    with pytest.raises(ValueError, match="max_concurrency"):
+        StaticUrlSource(urls=["https://docs.example.com/"], max_concurrency=0)

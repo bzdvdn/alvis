@@ -64,15 +64,18 @@ class Indexer(Protocol):
 
 
 class KeywordIndexer(Protocol):
-    """Optional capability: lexical (BM25) search alongside vector search.
+    """Optional capability: lexical (BM25-ish) search alongside vector search.
 
-    Backends that keep the full chunk text locally (``memory``, ``sqlite``)
-    can implement this so ``query(..., hybrid=True)`` fuses a dense ranking
-    with a keyword ranking (see :mod:`alvis.index.fusion`). Backends without
-    it (``qdrant``, ``pgvector`` — text lives server-side with no BM25
-    endpoint behind this minimal client) degrade to vector-only search under
-    ``hybrid=True``; that's a logged fallback, not an error, since a plugin
-    may add native full-text search of its own later.
+    Implemented by every built-in backend so ``query(..., hybrid=True)``
+    fuses a dense ranking with a keyword ranking (see
+    :mod:`alvis.index.fusion`) — but not identically: ``memory``/``sqlite``
+    BM25-score the whole corpus locally in Python; ``pgvector`` ranks
+    server-side via ``tsvector``/``ts_rank``; ``qdrant`` narrows to a
+    candidate pool server-side (full-text payload index) then BM25-scores
+    that pool locally, since it has no BM25 endpoint behind this minimal
+    client. A backend that implements neither (a plugin without full-text
+    support) degrades to vector-only search under ``hybrid=True`` — a
+    logged fallback, not an error.
     """
 
     async def keyword_search(
@@ -91,15 +94,13 @@ class KeywordIndexer(Protocol):
 
 
 class BatchIndexer(Protocol):
-    """Optional capability: upsert many chunks in one round trip.
+    """Optional capability: upsert many chunks in one (or few) round trips.
 
-    Backends whose write is a network call per point (``qdrant``) benefit
-    from sending many in a single request instead of the default per-chunk
-    ``upsert`` loop the engine otherwise runs. Backends where "batching"
-    would not actually save a round trip (``memory``, ``sqlite`` — already
-    in-process; ``pgvector`` — one connection reused across calls, see
-    :mod:`alvis.index.pgvector`) don't need to implement this; the engine
-    falls back to the per-chunk loop when it's absent.
+    Implemented by ``qdrant`` (many points per HTTP PUT) and ``pgvector``
+    (a multi-row ``INSERT``, on top of the one connection already reused
+    across calls — see :mod:`alvis.index.pgvector`); ``memory``/``sqlite``
+    don't need it, already being in-process. The engine falls back to the
+    per-chunk ``upsert`` loop when this is absent (a plugin backend, say).
     """
 
     async def upsert_batch(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import xml.etree.ElementTree as ET
 
@@ -92,6 +93,39 @@ async def test_github_no_text_matches() -> None:
 
     source = GitHubSource(repo="acme/kb", transport=httpx.MockTransport(handler))
     assert await source.fetch() == []
+
+
+async def test_github_fetch_bounds_concurrent_blob_requests() -> None:
+    tree = {
+        "tree": [
+            {"type": "blob", "path": f"docs/{i}.md", "sha": str(i)} for i in range(6)
+        ]
+    }
+    in_flight = 0
+    peak_in_flight = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal in_flight, peak_in_flight
+        if "/git/trees/" in request.url.path:
+            return httpx.Response(200, json=tree)
+        in_flight += 1
+        peak_in_flight = max(peak_in_flight, in_flight)
+        await asyncio.sleep(0.01)
+        in_flight -= 1
+        return httpx.Response(200, json={"content": base64.b64encode(b"x").decode()})
+
+    source = GitHubSource(
+        repo="acme/kb", max_concurrency=2, transport=httpx.MockTransport(handler)
+    )
+    artifacts = await source.fetch()
+
+    assert peak_in_flight == 2
+    assert [a.metadata["path"] for a in artifacts] == [f"docs/{i}.md" for i in range(6)]
+
+
+def test_github_rejects_max_concurrency_below_one() -> None:
+    with pytest.raises(ValueError, match="max_concurrency"):
+        GitHubSource(repo="acme/kb", max_concurrency=0)
 
 
 async def test_gitlab_fetches_raw_blobs_and_encodes_project() -> None:
@@ -294,6 +328,39 @@ async def test_s3_sigv4_fetch_with_pagination(
     assert auth.startswith("AWS4-HMAC-SHA256 Credential=minioadmin/")
     assert "aws/aws4_request" in auth or "s3/aws4_request" in auth
     assert signed[0]["x-amz-date"].startswith("20")
+
+
+async def test_s3_fetch_bounds_concurrent_object_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("S3_ACCESS", "minioadmin")
+    monkeypatch.setenv("S3_SECRET", "minioadmin")
+    in_flight = 0
+    peak_in_flight = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal in_flight, peak_in_flight
+        if request.url.params.get("list-type") == "2":
+            body = _s3_xml([f"docs/{i}.md" for i in range(6)], truncated=False)
+            return httpx.Response(200, content=body)
+        in_flight += 1
+        peak_in_flight = max(peak_in_flight, in_flight)
+        await asyncio.sleep(0.01)
+        in_flight -= 1
+        return httpx.Response(200, content=b"x")
+
+    source = S3Source(
+        url="http://localhost:9000",
+        bucket="kb",
+        access_key_env="S3_ACCESS",
+        secret_key_env="S3_SECRET",
+        max_concurrency=2,
+        transport=httpx.MockTransport(handler),
+    )
+    artifacts = await source.fetch()
+
+    assert peak_in_flight == 2
+    assert len(artifacts) == 6
 
 
 async def test_s3_prefix_filter(monkeypatch: pytest.MonkeyPatch) -> None:

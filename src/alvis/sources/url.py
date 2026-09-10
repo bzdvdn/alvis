@@ -18,14 +18,15 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import os
 import re
 import time
 from urllib.parse import urlparse
 
 import httpx
 
+from alvis._concurrency import gather_bounded
 from alvis.core.models import Artifact, DocumentMeta
+from alvis.secrets import resolve_secret
 from alvis.sources.base import SourceError
 from alvis.sources.content_types import content_type
 from alvis.transport import RETRYABLE_STATUS, backoff_delay
@@ -58,9 +59,13 @@ class StaticUrlSource:
         verify: bool | str = True,
         transport: httpx.AsyncBaseTransport | None = None,
         max_bytes: int | None = None,
+        max_concurrency: int = 8,
     ) -> None:
         if not urls:
             raise SourceError("static_url requires at least one 'urls' entry")
+        if max_concurrency < 1:
+            raise ValueError("max_concurrency must be >= 1")
+        self.max_concurrency = max_concurrency
         self.urls = list(urls)
         self.api_token_env = api_token_env
         self.timeout = timeout
@@ -78,27 +83,35 @@ class StaticUrlSource:
             self._client = None
 
     async def list_documents(self) -> list[DocumentMeta]:
-        """Fingerprint every URL without downloading unchanged bodies."""
-        metas: list[DocumentMeta] = []
-        for url in self.urls:
-            meta = await self._meta(url)
-            if meta is not None:
-                metas.append(meta)
-        return metas
+        """Fingerprint every URL without downloading unchanged bodies.
+
+        One ``HEAD`` (or fallback ``GET``) per URL, run concurrently,
+        bounded by ``max_concurrency``.
+        """
+        metas = await gather_bounded(
+            self.urls, self._meta, max_concurrency=self.max_concurrency
+        )
+        return [meta for meta in metas if meta is not None]
 
     async def fetch(self, *, uris: set[str] | None = None) -> list[Artifact]:
-        """Download the wanted URLs (or all when ``uris`` is ``None``)."""
-        artifacts: list[Artifact] = []
-        for url in self.urls:
-            if uris is not None and url not in uris:
-                continue
+        """Download the wanted URLs (or all when ``uris`` is ``None``).
+
+        Downloads run concurrently, bounded by ``max_concurrency``.
+        """
+        wanted = [url for url in self.urls if uris is None or url in uris]
+
+        async def _fetch_one(url: str) -> Artifact | None:
             try:
-                artifacts.append(await self._artifact(await self._get(url), url))
+                return await self._artifact(await self._get(url), url)
             except SourceError as exc:
                 if exc.status_code == 413:
-                    continue  # oversized page skipped, others abort the run
+                    return None  # oversized page skipped, others abort the run
                 raise
-        return artifacts
+
+        results = await gather_bounded(
+            wanted, _fetch_one, max_concurrency=self.max_concurrency
+        )
+        return [artifact for artifact in results if artifact is not None]
 
     async def _meta(self, url: str) -> DocumentMeta | None:
         """Build one listing entry from HTTP validators (GET+hash fallback)."""
@@ -217,10 +230,10 @@ class StaticUrlSource:
     def _headers(self) -> dict[str, str]:
         headers = {"Accept": "text/html, text/plain, application/json, */*"}
         if self.api_token_env:
-            token = os.environ.get(self.api_token_env)
+            token = resolve_secret(self.api_token_env)
             if not token:
                 raise SourceError(
-                    f"environment variable {self.api_token_env!r} is not set "
+                    f"secret {self.api_token_env!r} is not set "
                     f"(configured via api_token_env)"
                 )
             headers["Authorization"] = f"Bearer {token}"

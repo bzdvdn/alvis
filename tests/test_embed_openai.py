@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 
 import httpx
@@ -77,6 +78,61 @@ async def test_embed_batch_splits_by_batch_size() -> None:
     vectors = await embedder.embed_batch(_chunks("a", "b", "c", "d", "e"))
     assert calls == [["a", "b"], ["c", "d"], ["e"]]
     assert vectors == [[0.0], [1.0], [0.0], [1.0], [0.0]]
+
+
+async def test_embed_batch_dispatches_concurrently_up_to_max_concurrency() -> None:
+    in_flight = 0
+    peak_in_flight = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal in_flight, peak_in_flight
+        in_flight += 1
+        peak_in_flight = max(peak_in_flight, in_flight)
+        await asyncio.sleep(0.01)
+        in_flight -= 1
+        data = json.loads(request.read().decode())
+        entries = [{"index": 0, "embedding": [1.0]} for _ in data["input"]]
+        return httpx.Response(200, json={"data": entries})
+
+    embedder = ApiEmbedder(
+        base_url="http://embeddings.local/v1",
+        model="m",
+        batch_size=1,
+        max_concurrency=3,
+        transport=httpx.MockTransport(handler),
+    )
+    await embedder.embed_batch(_chunks("a", "b", "c", "d", "e", "f"))
+
+    assert peak_in_flight == 3
+
+
+async def test_embed_batch_max_concurrency_one_is_sequential() -> None:
+    in_flight = 0
+    peak_in_flight = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal in_flight, peak_in_flight
+        in_flight += 1
+        peak_in_flight = max(peak_in_flight, in_flight)
+        await asyncio.sleep(0.005)
+        in_flight -= 1
+        return httpx.Response(200, json={"data": [{"index": 0, "embedding": [1.0]}]})
+
+    embedder = ApiEmbedder(
+        base_url="http://embeddings.local/v1",
+        model="m",
+        batch_size=1,
+        max_concurrency=1,
+        transport=httpx.MockTransport(handler),
+    )
+    await embedder.embed_batch(_chunks("a", "b", "c"))
+
+    assert peak_in_flight == 1
+
+
+def test_embed_rejects_max_concurrency_below_one() -> None:
+    with pytest.raises(ValueError, match="max_concurrency"):
+        ApiEmbedder(base_url="http://x", model="m", max_concurrency=0)
 
 
 async def test_embed_retries_on_5xx() -> None:

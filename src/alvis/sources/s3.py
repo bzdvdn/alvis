@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import os
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from typing import Any
@@ -12,7 +11,9 @@ from urllib.parse import quote
 
 import httpx
 
+from alvis._concurrency import gather_bounded
 from alvis.core.models import Artifact, DocumentMeta
+from alvis.secrets import resolve_secret
 from alvis.sources.base import SourceError
 from alvis.sources.content_types import content_type, is_ingestible, matches_globs
 from alvis.sources.http import HttpClient
@@ -145,16 +146,20 @@ class S3Source:
         verify: bool | str = True,
         transport: httpx.AsyncBaseTransport | None = None,
         max_bytes: int | None = None,
+        max_concurrency: int = 8,
     ) -> None:
+        if max_concurrency < 1:
+            raise ValueError("max_concurrency must be >= 1")
+        self.max_concurrency = max_concurrency
         self.bucket = bucket
         self.prefix = prefix
         self.include_globs = include_globs
         self.exclude_globs = exclude_globs
-        access_key = os.environ.get(access_key_env)
-        secret_key = os.environ.get(secret_key_env)
+        access_key = resolve_secret(access_key_env)
+        secret_key = resolve_secret(secret_key_env)
         if not access_key or not secret_key:
             raise SourceError(
-                f"environment variables {access_key_env!r} and {secret_key_env!r} "
+                f"secrets {access_key_env!r} and {secret_key_env!r} "
                 f"must be set to use the s3 source"
             )
         signer = SigV4Signer(access_key, secret_key, region)
@@ -194,15 +199,18 @@ class S3Source:
     async def fetch(self, *, uris: set[str] | None = None) -> list[Artifact]:
         """List the bucket and fetch the wanted text objects as artifacts.
 
-        With ``uris``, only the given object URIs are downloaded.
+        With ``uris``, only the given object URIs are downloaded. Object
+        downloads run concurrently, bounded by ``max_concurrency``.
         """
-        artifacts: list[Artifact] = []
-        for key, _, _ in await self._list_objects():
-            if not self._wanted(key):
-                continue
+        wanted = [
+            key
+            for key, _, _ in await self._list_objects()
+            if self._wanted(key)
+            and (uris is None or _object_uri(self.client.base_url, self.bucket, key) in uris)
+        ]
+
+        async def _fetch_one(key: str) -> Artifact | None:
             uri = _object_uri(self.client.base_url, self.bucket, key)
-            if uris is not None and uri not in uris:
-                continue
             try:
                 blob = await self.client.request(
                     "GET",
@@ -212,22 +220,24 @@ class S3Source:
                 )
             except SourceError as exc:
                 if exc.status_code == 413:
-                    continue  # oversized object skipped, others abort the run
+                    return None  # oversized object skipped, others abort the run
                 raise
-            artifacts.append(
-                Artifact(
-                    step_id=_sha256(f"{self.bucket}/{key}".encode()),
-                    uri=uri,
-                    content_type=content_type(key),
-                    data=blob,
-                    metadata={
-                        "path": key,
-                        "title": key.rsplit("/", 1)[-1],
-                        "bucket": self.bucket,
-                    },
-                )
+            return Artifact(
+                step_id=_sha256(f"{self.bucket}/{key}".encode()),
+                uri=uri,
+                content_type=content_type(key),
+                data=blob,
+                metadata={
+                    "path": key,
+                    "title": key.rsplit("/", 1)[-1],
+                    "bucket": self.bucket,
+                },
             )
-        return artifacts
+
+        results = await gather_bounded(
+            wanted, _fetch_one, max_concurrency=self.max_concurrency
+        )
+        return [artifact for artifact in results if artifact is not None]
 
     async def _list_objects(self) -> list[tuple[str, str, str]]:
         objects: list[tuple[str, str, str]] = []

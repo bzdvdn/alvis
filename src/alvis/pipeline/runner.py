@@ -140,12 +140,14 @@ async def query_async(
     ``filters`` restricts candidates to metadata matching every ``key: value``
     pair (exact equality) before ranking — e.g. ``{"space": "ENG"}``.
 
-    ``hybrid=True`` additionally runs a BM25 keyword search over the same
-    text and fuses it with the dense ranking (Reciprocal Rank Fusion) —
-    catches exact terms (IDs, acronyms) dense vectors sometimes miss. Only
-    backends that keep full text locally (``memory``, ``sqlite``) support
-    this; on others it degrades to vector-only search (logged, not an
-    error) — see :class:`alvis.index.base.KeywordIndexer`.
+    ``hybrid=True`` additionally runs a keyword search over the same text
+    and fuses it with the dense ranking (Reciprocal Rank Fusion) — catches
+    exact terms (IDs, acronyms) dense vectors sometimes miss. Every
+    built-in backend supports this (``memory``/``sqlite`` BM25 the corpus
+    locally, ``pgvector`` ranks via ``tsvector``, ``qdrant`` BM25-scores a
+    server-narrowed candidate pool); a backend without it (a plugin) just
+    degrades to vector-only search (logged, not an error) — see
+    :class:`alvis.index.base.KeywordIndexer`.
 
     ``rerank``, when given an :class:`alvis.rerank.LLMReranker`, reorders
     the (dense or hybrid-fused) candidates by relevance via an LLM chat call

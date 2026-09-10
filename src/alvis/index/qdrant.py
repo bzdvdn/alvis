@@ -14,6 +14,15 @@ _UPSERT_BATCH_SIZE = 100
 """Points per PUT in :meth:`QdrantIndex.upsert_batch` — keeps individual
 requests bounded regardless of how many chunks a run has pending."""
 
+_KEYWORD_CANDIDATE_FACTOR = 20
+_KEYWORD_CANDIDATE_CAP = 500
+"""Candidate pool size for :meth:`QdrantIndex.keyword_search` —
+``min(max(top_k * _KEYWORD_CANDIDATE_FACTOR, 50), _KEYWORD_CANDIDATE_CAP)``.
+Qdrant has no BM25 endpoint behind this minimal REST client (that needs
+named sparse vectors, a bigger schema change); the full-text payload index
+narrows to a candidate pool server-side, then BM25 scores that pool
+locally — the pool must be wide enough for BM25 to have something to rank."""
+
 #: Reserved payload namespace — keys beginning with ``__`` are owned by the
 #: engine and drive dedup, incremental skip, and per-source reconcile. User
 #: metadata may never use this prefix; the engine rejects such keys on write.
@@ -255,6 +264,111 @@ class QdrantIndex:
             f"/collections/{self.collection}",
             payload={"vectors": {"size": dimensions, "distance": "Cosine"}},
         )
+
+    async def keyword_search(
+        self,
+        text: str,
+        *,
+        top_k: int = 5,
+        filters: Mapping[str, str] | None = None,
+        principals: Sequence[str] | None = None,
+    ) -> list[SearchHit]:
+        """BM25-rank a candidate set pulled via Qdrant's full-text payload index.
+
+        Qdrant has no BM25 endpoint behind this minimal REST client — that
+        needs named sparse vectors, a bigger schema/ingest change. This
+        instead pulls a candidate pool whose ``__text`` matches any query
+        token (Qdrant's full-text payload index, server-side ``should``
+        match), then BM25-scores that pool locally with
+        :mod:`alvis.index.keyword` — same scoring as ``memory``/``sqlite``,
+        just sourced from a server-narrowed candidate pool instead of the
+        whole corpus. ``filters``/``principals`` apply the same server-side
+        clauses as :meth:`search`.
+        """
+        from alvis.index.keyword import bm25_scores, tokenize
+
+        query_tokens = tokenize(text)
+        if not query_tokens:
+            return []
+        await self._ensure_text_index()
+        must: list[dict[str, object]] = [
+            {"key": key, "match": {"value": value}} for key, value in (filters or {}).items()
+        ]
+        if principals is not None:
+            must.append(
+                {
+                    "should": [
+                        {"is_empty": {"key": _PAYLOAD_ACL}},
+                        {"key": _PAYLOAD_ACL, "match": {"any": list(principals)}},
+                    ]
+                }
+            )
+        filter_payload: dict[str, object] = {
+            "should": [
+                {"key": _PAYLOAD_TEXT, "match": {"text": token}}
+                for token in dict.fromkeys(query_tokens)
+            ]
+        }
+        if must:
+            filter_payload["must"] = must
+        limit = min(max(top_k * _KEYWORD_CANDIDATE_FACTOR, 50), _KEYWORD_CANDIDATE_CAP)
+        try:
+            response = await self.client.request(
+                "POST",
+                f"/collections/{self.collection}/points/scroll",
+                payload={"filter": filter_payload, "limit": limit, "with_payload": True},
+            )
+        except SourceError as exc:
+            if exc.status_code == 404:
+                return []
+            raise
+        points = response.get("result", {}).get("points", [])
+        if not points:
+            return []
+        documents = [
+            tokenize(str(point.get("payload", {}).get(_PAYLOAD_TEXT, ""))) for point in points
+        ]
+        scores = bm25_scores(query_tokens, documents)
+        ranked = sorted(
+            zip(points, scores, strict=True), key=lambda pair: pair[1], reverse=True
+        )
+        return [
+            SearchHit(
+                text=str(point.get("payload", {}).get(_PAYLOAD_TEXT, "")),
+                source_uri=str(point.get("payload", {}).get(_PAYLOAD_URI, "")),
+                metadata={
+                    key: value
+                    for key, value in point.get("payload", {}).items()
+                    if not _is_system_key(key)
+                },
+                score=float(score),
+            )
+            for point, score in ranked[:top_k]
+        ]
+
+    async def _ensure_text_index(self) -> None:
+        """Create (or confirm) a full-text payload index on ``__text``.
+
+        Idempotent: Qdrant accepts re-creating an existing payload index
+        (it's a no-op replace), so no existence check is needed first.
+        """
+        try:
+            await self.client.request(
+                "PUT",
+                f"/collections/{self.collection}/index",
+                payload={
+                    "field_name": _PAYLOAD_TEXT,
+                    "field_schema": {
+                        "type": "text",
+                        "tokenizer": "word",
+                        "lowercase": True,
+                    },
+                },
+            )
+        except SourceError as exc:
+            if exc.status_code == 404:
+                return
+            raise
 
     async def count(self) -> int:
         """Total points in the collection (for ``alvis status``)."""

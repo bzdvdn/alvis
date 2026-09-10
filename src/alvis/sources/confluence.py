@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from alvis._concurrency import gather_bounded
 from alvis.core.models import Artifact, DocumentMeta
 from alvis.sources.http import HttpClient
 
@@ -27,7 +28,11 @@ class ConfluenceSource:
         retries: int = 3,
         retry_backoff: float = 1.0,
         verify: bool | str = True,
+        max_concurrency: int = 8,
     ) -> None:
+        if max_concurrency < 1:
+            raise ValueError("max_concurrency must be >= 1")
+        self.max_concurrency = max_concurrency
         self.space = space
         self.client = HttpClient(
             base_url=url,
@@ -58,15 +63,17 @@ class ConfluenceSource:
     async def fetch(self, *, uris: set[str] | None = None) -> list[Artifact]:
         """Fetch pages (expanded HTML bodies) as artifacts.
 
-        With ``uris``, only the given page webui URIs are expanded.
+        With ``uris``, only the given page webui URIs are expanded. Page
+        expansions run concurrently, bounded by ``max_concurrency``.
         """
         pages = await self._list_pages()
-        artifacts: list[Artifact] = []
-        for page in pages:
+        wanted = [
+            page for page in pages if uris is None or page["_links"]["webui"] in uris
+        ]
+
+        async def _fetch_one(page: dict[str, Any]) -> Artifact:
             page_id = page["id"]
             uri = page["_links"]["webui"]
-            if uris is not None and uri not in uris:
-                continue
             expanded = await self.client.request(
                 "GET",
                 f"/rest/api/content/{page_id}",
@@ -75,21 +82,22 @@ class ConfluenceSource:
             body_html = (
                 expanded.get("body", {}).get("storage", {}).get("value", "") or ""
             )
-            artifacts.append(
-                Artifact(
-                    step_id=page_id,
-                    uri=uri,
-                    content_type="text/html",
-                    data=body_html.encode("utf-8"),
-                    metadata={
-                        "title": page["title"],
-                        "id": page_id,
-                        "documentId": page_id,
-                        "version": page.get("version", {}).get("number"),
-                    },
-                )
+            return Artifact(
+                step_id=page_id,
+                uri=uri,
+                content_type="text/html",
+                data=body_html.encode("utf-8"),
+                metadata={
+                    "title": page["title"],
+                    "id": page_id,
+                    "documentId": page_id,
+                    "version": page.get("version", {}).get("number"),
+                },
             )
-        return artifacts
+
+        return await gather_bounded(
+            wanted, _fetch_one, max_concurrency=self.max_concurrency
+        )
 
     async def _list_pages(self) -> list[dict[str, Any]]:
         pages = await self.client.request(

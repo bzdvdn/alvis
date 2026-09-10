@@ -84,6 +84,20 @@ Each source/index accepts `retries`, `retry_backoff`, and `verify`. Use
 `verify: false` only against trusted internal endpoints with self-signed
 certificates.
 
+## Can I keep credentials in Vault instead of `.env`?
+
+Yes. `api_token_env`/`dsn_env`/`access_key_env`/`secret_key_env` all
+resolve through `alvis.secrets`, which defaults to environment variables
+— nothing changes unless you opt in. Set `ALVIS_SECRETS_BACKEND=vault`
+plus `ALVIS_VAULT_ADDR`/`ALVIS_VAULT_TOKEN` and every one of those config
+keys is read as a Vault KV v2 reference (`<mount>/<path>#<key>`, e.g.
+`secret/alvis#openai_api_key`) instead of an env var name — no other
+config changes. No `hvac` dependency: the KV v2 HTTP API is called
+directly, the same "no client library" approach as the `s3` source's
+hand-rolled SigV4. For AWS Secrets Manager or another backend, implement
+`alvis.secrets.SecretResolver` and call `alvis.secrets.set_resolver(...)`
+before `alvis run`/`alvis query`.
+
 ## Can it answer questions, or only retrieve chunks?
 
 Both. Retrieval returns the nearest chunks (`SearchHit`); for a grounded

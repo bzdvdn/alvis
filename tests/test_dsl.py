@@ -158,3 +158,62 @@ async def test_pipeline_assemble_overrides() -> None:
     assert cfg.index is not None
     assert cfg.index.type == "qdrant"
     assert cfg.embed.type == "default"
+
+
+def test_fs_dsl_max_bytes_roundtrips() -> None:
+    cfg = dsl.fs("/tmp", max_bytes=1024)
+    assert cfg.config["max_bytes"] == 1024
+    assert "max_bytes" not in dsl.fs("/tmp").config
+
+
+def test_github_dsl_max_bytes_and_max_concurrency_roundtrip() -> None:
+    cfg = dsl.github(repo="acme/kb", max_bytes=2048, max_concurrency=3)
+    assert cfg.config["max_bytes"] == 2048
+    assert cfg.config["max_concurrency"] == 3
+
+    default = dsl.github(repo="acme/kb")
+    assert "max_bytes" not in default.config
+    assert "max_concurrency" not in default.config
+
+
+def test_gitlab_dsl_max_bytes_and_max_concurrency_roundtrip() -> None:
+    cfg = dsl.gitlab(project="grp/proj", max_bytes=2048, max_concurrency=3)
+    assert cfg.config["max_bytes"] == 2048
+    assert cfg.config["max_concurrency"] == 3
+
+    default = dsl.gitlab(project="grp/proj")
+    assert "max_bytes" not in default.config
+    assert "max_concurrency" not in default.config
+
+
+def test_s3_dsl_max_bytes_and_max_concurrency_roundtrip() -> None:
+    cfg = dsl.s3(
+        url="u", bucket="b", access_key_env="A", secret_key_env="S",
+        max_bytes=2048, max_concurrency=3,
+    )
+    assert cfg.config["max_bytes"] == 2048
+    assert cfg.config["max_concurrency"] == 3
+
+    default = dsl.s3(url="u", bucket="b", access_key_env="A", secret_key_env="S")
+    assert "max_bytes" not in default.config
+    assert "max_concurrency" not in default.config
+
+
+def test_static_url_dsl_max_concurrency_roundtrips() -> None:
+    cfg = dsl.static_url(urls=["https://example.com/"], max_concurrency=3)
+    assert cfg.config["max_concurrency"] == 3
+    assert "max_concurrency" not in dsl.static_url(urls=["https://example.com/"]).config
+
+
+def test_confluence_dsl_max_concurrency_roundtrips() -> None:
+    cfg = dsl.confluence(url="https://wiki.example.com", space="TEAM", max_concurrency=3)
+    assert cfg.config["max_concurrency"] == 3
+    default = dsl.confluence(url="https://wiki.example.com", space="TEAM")
+    assert "max_concurrency" not in default.config
+
+
+def test_embed_openai_dsl_max_concurrency_roundtrips() -> None:
+    cfg = dsl.embed_openai(base_url="https://api.openai.com/v1", model="m", max_concurrency=8)
+    assert cfg.config["max_concurrency"] == 8
+    default = dsl.embed_openai(base_url="https://api.openai.com/v1", model="m")
+    assert "max_concurrency" not in default.config

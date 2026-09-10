@@ -30,6 +30,17 @@ _SYSTEM_PROMPT = (
     "number exactly once. No prose, no markdown fences — the array alone."
 )
 
+_MAX_EXCERPT_CHARS = 2000
+"""Per-excerpt cap on the text sent to the reranking LLM.
+
+Candidates are already over-fetched (``top_k * _CANDIDATE_FACTOR`` in
+``pipeline.runner``) and chunk text can run long (a whole PDF section) —
+uncapped, a handful of candidates can exceed the chat model's context
+window. Ranking only needs enough of each excerpt to judge relevance to
+the query, not the full text, so this is a relevance-judgment budget, not
+a citation source — the *original* untruncated ``SearchHit`` is still what
+gets returned and, downstream, synthesized into an answer."""
+
 
 class LLMReranker:
     """Reorders :class:`SearchHit` candidates via a chat-completions endpoint.
@@ -107,9 +118,16 @@ class LLMReranker:
         return _parse_order(content, len(hits))
 
 
+def _truncate(text: str, limit: int = _MAX_EXCERPT_CHARS) -> str:
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "…"
+
+
 def _prompt(query: str, hits: Sequence[SearchHit]) -> str:
     excerpts = "\n\n".join(
-        f"[{index}]\n{hit.text.strip()}" for index, hit in enumerate(hits, start=1)
+        f"[{index}]\n{_truncate(hit.text)}" for index, hit in enumerate(hits, start=1)
     )
     return f"Query: {query}\n\nExcerpts:\n{excerpts}"
 

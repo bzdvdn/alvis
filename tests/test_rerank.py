@@ -56,6 +56,26 @@ async def test_llm_reranker_reorders_hits_by_model_response() -> None:
     assert [hit.text for hit in ranked] == ["b", "a", "c"]
 
 
+async def test_llm_reranker_caps_excerpt_length_in_prompt() -> None:
+    from alvis.rerank import _MAX_EXCERPT_CHARS, _prompt
+
+    long_hit = SearchHit(text="x" * (_MAX_EXCERPT_CHARS + 500), source_uri="u/long", score=0.5)
+    prompt = _prompt("q", [long_hit])
+    excerpt = prompt.split("Excerpts:\n[1]\n", 1)[1]
+
+    assert len(excerpt) <= _MAX_EXCERPT_CHARS + 1  # + truncation marker
+    assert excerpt.endswith("…")
+
+
+async def test_llm_reranker_short_excerpt_is_not_truncated() -> None:
+    from alvis.rerank import _prompt
+
+    hit = SearchHit(text="short excerpt", source_uri="u/1", score=0.5)
+    prompt = _prompt("q", [hit])
+    assert "short excerpt" in prompt
+    assert "…" not in prompt
+
+
 async def test_llm_reranker_truncates_to_top_k() -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(

@@ -46,7 +46,7 @@ def test_pgvector_rejects_missing_dsn() -> None:
 
 
 def test_pgvector_rejects_missing_env() -> None:
-    with pytest.raises(ValueError, match="environment variable"):
+    with pytest.raises(ValueError, match="secret"):
         PgVectorIndex(dsn_env="DEFINITELY_NOT_SET_VAR_123")
 
 
@@ -171,3 +171,67 @@ def test_pgvector_reconcile_empty_source_clears_all() -> None:
 
     assert "DELETE" in conn.statements[0]
     assert conn.params[0] == ("s3",)
+
+
+def test_pgvector_upsert_batch_sends_one_multi_row_insert() -> None:
+    index = PgVectorIndex(dsn="postgresql://u@h/db")
+    conn = _Conn(index)
+    _swap(index, conn)
+
+    items = [
+        (Chunk(text=f"chunk {i}", source_uri=f"u/{i}"), [0.1, 0.2], f"h{i}")
+        for i in range(3)
+    ]
+
+    async def run() -> None:
+        await index.upsert_batch(items, source_id="s")
+
+    import asyncio
+
+    asyncio.run(run())
+
+    insert_statements = [s for s in conn.statements if s.startswith("INSERT")]
+    assert len(insert_statements) == 1
+    assert insert_statements[0].count("ON CONFLICT") == 1
+    assert conn.params[-1].count(str(point_id("u/0", "chunk 0"))) == 1
+    assert len(conn.params[-1]) == 3 * 7
+
+
+def test_pgvector_upsert_batch_chunks_large_batches() -> None:
+    from alvis.index.pgvector import _UPSERT_BATCH_SIZE
+
+    index = PgVectorIndex(dsn="postgresql://u@h/db")
+    conn = _Conn(index)
+    _swap(index, conn)
+
+    total = _UPSERT_BATCH_SIZE + 1
+    items = [
+        (Chunk(text=f"chunk {i}", source_uri=f"u/{i}"), [0.1, 0.2], f"h{i}")
+        for i in range(total)
+    ]
+
+    async def run() -> None:
+        await index.upsert_batch(items, source_id="s")
+
+    import asyncio
+
+    asyncio.run(run())
+
+    insert_statements = [s for s in conn.statements if s.startswith("INSERT")]
+    assert len(insert_statements) == 2
+    assert conn.params[-2].count("::vector") == 0  # params are values, not SQL text
+
+
+def test_pgvector_upsert_batch_empty_is_noop() -> None:
+    index = PgVectorIndex(dsn="postgresql://u@h/db")
+    conn = _Conn(index)
+    _swap(index, conn)
+
+    async def run() -> None:
+        await index.upsert_batch([], source_id="s")
+
+    import asyncio
+
+    asyncio.run(run())
+
+    assert conn.statements == []

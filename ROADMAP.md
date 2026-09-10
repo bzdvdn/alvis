@@ -50,10 +50,10 @@ Goal: attract first contributors and prove the plugin contract.
 Goal: go from "nearest chunks" to a cited answer, the workflow corporate users actually ask for.
 
 - [x] Response synthesis with citations: `alvis.answer` (`Synthesizer` on the OpenAI-compatible chat contract; `[N]` markers → `Citation`s; offline `citation_answer` fallback so `--answer` works with no API key) + CLI `alvis query --answer`
-- [ ] Metadata filters + hybrid search (dense + BM25/full-text) — filter by `space:`/`path:`/source before scoring
-- [ ] Reranking (cross-encoder) over retrieved candidates
+- [x] Metadata filters + hybrid search (dense + BM25/full-text, Reciprocal Rank Fusion) — `Indexer.search(filters=...)` / `KeywordIndexer.keyword_search` implemented on every built-in backend (`memory`/`sqlite` BM25 locally, `pgvector` via `tsvector`/`ts_rank`, `qdrant` via a full-text payload index + local BM25 over the candidate pool); CLI `alvis query --filter key=value --hybrid`
+- [x] Reranking over retrieved candidates — `alvis.rerank.LLMReranker` (LLM-based, not a local cross-encoder — no local ML model dependency by design, see CONSTITUTION); fails soft to the original order on any error; CLI `alvis query --rerank`
 - [ ] Multi-turn chat with history (follow-up questions)
-- [ ] Evaluation harness (faithfulness/relevancy) to prove retrieval quality
+- [x] Evaluation harness — `alvis.evaluation` (hit rate / MRR against a fixed case set) + CLI `alvis eval`; scores retrieval quality (did the right chunk come back), not yet answer quality (faithfulness/relevancy via an LLM judge) — that half is still open, see `docs/evaluation.md`'s Scope section
 
 **Done when:** a user asks a natural-language question and gets a cited, grounded answer — with or without an LLM key.
 
@@ -108,6 +108,43 @@ Goal: Alvis maintains itself; the community drives breadth.
 - [x] Project layout defaults — `alvis run` with no paths scans `alvis/pipelines/*.yaml` (+ `./alvis.yaml`) and runs them concurrently; local companion plugins load via an explicit `--plugins <dir>` flag (`alvis.plugin.load_local_plugins`), never implicitly
 - [x] Production hardening — version 0.6.0; CONSTITUTION aligned to reality (Python 3.10+, as CI/pyproject); import-cycle-free module layout (verified by dependency analyzer); plugin factory contract tests (keyword-only signatures); pytest coverage gate ≥90% + `pip-audit` job in CI
 - [ ] Performance budget: p99 chunk+embed throughput targets
+
+## v2.1 — Retrieval hardening & production readiness
+
+Goal: close the gaps a senior-architect review found in the shipped v2.0 contract —
+retrieval quality, multi-tenancy, connection/fan-out hygiene, and secrets, none of
+which needed a contract-breaking change.
+
+- [x] ACL-aware retrieval — `source.config.acl` (static per-source principal list) →
+  reserved `__acl` field → `Indexer.search`/`KeywordIndexer.keyword_search(principals=...)`,
+  enforced server-side on `qdrant`/`pgvector`, in Python on `memory`/`sqlite`; CLI
+  `alvis query --principal`. Honestly scoped as a static tag, not live per-document
+  permissions from the origin system — no connector fetches those today.
+- [x] Production-backend connection hardening — `HttpClient` reuses one pooled
+  `httpx.AsyncClient` instead of one per request; `PgVectorIndex` reuses one
+  connection instead of reconnecting per statement; `QdrantIndex`/`PgVectorIndex`
+  batch upserts (`BatchIndexer` protocol) instead of one write per chunk.
+- [x] Concurrency budget on embed/fetch fan-out — `ApiEmbedder.embed_batch` and every
+  remote source's per-document fetch (`github`/`gitlab`/`s3`/`confluence`/
+  `static_url`) dispatch concurrently, bounded by `max_concurrency`, instead of one
+  request at a time.
+- [x] Secrets backend — `alvis.secrets.SecretResolver`: env vars by default (no
+  behavior change), swappable to HashiCorp Vault (KV v2 over plain HTTP, no `hvac`
+  dependency) via `ALVIS_SECRETS_BACKEND=vault`, or a custom resolver for AWS
+  Secrets Manager etc.
+- [x] `cli.py` split into a package (`alvis/cli/`, one module per subcommand) — was
+  1143 lines in one file, now under ~240 lines per file.
+- [x] DSL/YAML parity audit — `alvis.dsl` builders were missing `max_bytes` and the
+  new `max_concurrency` knobs on several source/embedder builders (YAML always
+  supported them via the raw config dict; the typed builders had to catch up by hand).
+- [ ] Answer-quality evaluation (faithfulness/relevancy via an LLM judge) — the
+  retrieval-only eval harness from v0.3 stops short of this; still open.
+- [ ] Vector-store breadth beyond `qdrant`/`pgvector` (Elasticsearch/OpenSearch,
+  Weaviate, Pinecone, ...) — the Plugin SDK makes this possible externally, but
+  nothing ships in-tree; likely the single biggest adoption blocker against
+  broader RAG frameworks with 30+ vector-store integrations.
+- [ ] Source connectors beyond the DevOps/engineering-KB profile (GitLab/GitHub/
+  Confluence/S3/fs/static_url) — no Notion/SharePoint/Google Drive/Slack/Jira.
 
 ---
 

@@ -71,7 +71,16 @@ alvis status examples/hello-pipeline.yaml  # source health, last run, index coun
 
 Secrets are referenced by name (`api_token_env`, `dsn_env`, ...) from a
 `.env` in the project root (or `--env-file`); `alvis run` fails fast listing
-whatever is missing. See [docs/status.md](docs/status.md).
+whatever is missing. See [docs/status.md](docs/status.md). By default the
+reference is an environment variable name, resolved through
+`alvis.secrets` — swap the backend to HashiCorp Vault (no extra
+dependency; the KV v2 HTTP API is called directly) by setting
+`ALVIS_SECRETS_BACKEND=vault`, `ALVIS_VAULT_ADDR`, and `ALVIS_VAULT_TOKEN`;
+every existing `*_env` config key then names a `<mount>/<path>#<key>` Vault
+reference instead of an env var, with no other config changes. See
+[`alvis/secrets.py`](src/alvis/secrets.py) to implement a custom
+`SecretResolver` (AWS Secrets Manager, etc.) and call `alvis.secrets.
+set_resolver(...)` before `alvis run`.
 
 ## Sources
 
@@ -84,7 +93,12 @@ whatever is missing. See [docs/status.md](docs/status.md).
 | `s3`        | text objects in a bucket (SigV4, no boto3; MinIO-compatible) | `url`, `bucket`, `access_key_env`, `secret_key_env`, `region`, `prefix`, `include_globs`, `exclude_globs` |
 | `static_url`| plain HTML pages served over HTTP(S), no JS needed            | `urls`, `api_token_env`, `max_bytes`, `timeout`                                                  |
 
-Every source accepts `retries`, `retry_backoff`, and `verify`.
+Every source accepts `retries`, `retry_backoff`, and `verify`. Every remote
+source (`confluence`, `github`, `gitlab`, `s3`, `static_url`) also accepts
+`max_concurrency` (default 8) — how many document/blob/object/page
+downloads run at once, bounded so a large corpus doesn't hammer the host
+with one request per document; they all reuse one pooled HTTP client, so
+raising it is safe up to whatever the remote host can actually take.
 
 **Scoping what gets ingested** — use `prefix`/`path` to restrict a directory or
 subtree server-side, `include_globs` to ingest only matching paths, and
@@ -242,7 +256,11 @@ pipeline:
 
 Chunks are embedded in batches (`batch_size`) through the same
 retry/backoff machinery as sources, and the Qdrant collection is created
-with whatever dimensionality the model returns.
+with whatever dimensionality the model returns. Batches are dispatched
+concurrently, bounded by `max_concurrency` (default 4) — a large corpus
+sends several embedding requests at once instead of one at a time, without
+unbounded fan-out that could trip the provider's rate limit; set it to `1`
+for the old fully-sequential behavior.
 
 #### Embedding cache
 
@@ -331,10 +349,14 @@ excludes chunks whose source declared an `acl` (see below) that doesn't
 include any given principal. Omit it for no ACL filtering at all — see
 [ACL-aware retrieval](#acl-aware-retrieval).
 
-`--hybrid` fuses the dense ranking with a BM25 keyword search over the same
-text (Reciprocal Rank Fusion) — catches exact terms (IDs, acronyms) a dense
-vector alone can miss. Supported on `memory`/`sqlite` indexes today; other
-backends fall back to dense-only (logged, not an error):
+`--hybrid` fuses the dense ranking with a keyword search over the same text
+(Reciprocal Rank Fusion) — catches exact terms (IDs, acronyms) a dense
+vector alone can miss. Every built-in index supports it, though the keyword
+half is scored differently per backend: `memory`/`sqlite` BM25 the corpus
+locally, `pgvector` ranks via Postgres `tsvector`/`ts_rank`, `qdrant`
+BM25-scores a server-narrowed full-text candidate pool. A backend without
+any keyword search (a plugin) falls back to dense-only (logged, not an
+error):
 
 ```bash
 alvis query examples/sqlite.yaml --text "ERR-4471 retry policy" --hybrid
