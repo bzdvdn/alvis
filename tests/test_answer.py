@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from alvis.answer import Synthesizer, build_answer, citation_answer
+from alvis.answer import ChatTurn, Synthesizer, build_answer, citation_answer
 from alvis.core.models import SearchHit
 from alvis.testing import MockServer
 
@@ -114,3 +114,45 @@ def test_citation_answer_is_offline_fallback() -> None:
 def test_synthesizer_signature() -> None:
     llm = Synthesizer(base_url="http://llm.local", model="gpt-42")
     assert llm.signature == "openai-chat:gpt-42"
+
+
+async def test_synthesizer_replays_history_as_alternating_messages() -> None:
+    server = MockServer()
+    server.on(
+        "POST",
+        "/chat/completions",
+        json_payload={"choices": [{"message": {"content": "Yes, also idempotent [1]."}}]},
+    )
+    llm = Synthesizer(base_url="http://llm.local", model="gpt-test", transport=server.transport)
+    history = [
+        ChatTurn(question="is re-running safe?", answer="Yes, re-runs are idempotent."),
+        ChatTurn(question="what about deletes?", answer="Stale points are pruned."),
+    ]
+
+    await llm.answer("and partial failures?", _hits(), history=history)
+
+    payload: dict[str, Any] = json.loads(server.requests[0].content)
+    messages = payload["messages"]
+    assert messages[0]["role"] == "system"
+    assert messages[1] == {"role": "user", "content": "is re-running safe?"}
+    assert messages[2] == {"role": "assistant", "content": "Yes, re-runs are idempotent."}
+    assert messages[3] == {"role": "user", "content": "what about deletes?"}
+    assert messages[4] == {"role": "assistant", "content": "Stale points are pruned."}
+    assert messages[5]["role"] == "user"
+    assert "and partial failures?" in messages[5]["content"]
+
+
+async def test_synthesizer_no_history_matches_prior_message_shape() -> None:
+    """No `history` given -> exactly [system, user] as before this feature existed."""
+    server = MockServer()
+    server.on(
+        "POST",
+        "/chat/completions",
+        json_payload={"choices": [{"message": {"content": "ok [1]."}}]},
+    )
+    llm = Synthesizer(base_url="http://llm.local", model="gpt-test", transport=server.transport)
+
+    await llm.answer("q", _hits())
+
+    payload: dict[str, Any] = json.loads(server.requests[0].content)
+    assert len(payload["messages"]) == 2

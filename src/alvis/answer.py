@@ -52,6 +52,25 @@ class Answer(BaseModel):
     citations: tuple[Citation, ...] = Field(default_factory=tuple)
 
 
+class ChatTurn(BaseModel):
+    """One prior question/answer pair in a multi-turn conversation.
+
+    Passed back into :meth:`Synthesizer.answer` (or
+    :func:`alvis.pipeline.runner.answer_async`) as ``history`` so a
+    follow-up question ("what about the timeout for that?") is answered
+    with the same context a human reading the transcript would have.
+    Retrieval itself still runs on the follow-up question's own text —
+    there is no query-rewriting/condensing step — so a follow-up whose
+    retrieval-relevant terms only exist in an earlier turn may still miss
+    the right chunks; only the *synthesis* step sees the full history.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    question: str
+    answer: str
+
+
 class Synthesizer:
     """Answers questions over retrieval hits via a chat-completions endpoint.
 
@@ -90,15 +109,28 @@ class Synthesizer:
         """Release the underlying HTTP connection pool."""
         await self.client.aclose()
 
-    async def answer(self, question: str, hits: Sequence[SearchHit]) -> Answer:
-        """Synthesize a cited answer over the given retrieval hits."""
+    async def answer(
+        self,
+        question: str,
+        hits: Sequence[SearchHit],
+        *,
+        history: Sequence[ChatTurn] | None = None,
+    ) -> Answer:
+        """Synthesize a cited answer over the given retrieval hits.
+
+        ``history`` (optional), prior turns of the same conversation, are
+        replayed as alternating user/assistant messages before the final
+        grounded question — see :class:`ChatTurn`.
+        """
+        messages: list[dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        for turn in history or ():
+            messages.append({"role": "user", "content": turn.question})
+            messages.append({"role": "assistant", "content": turn.answer})
+        messages.append({"role": "user", "content": _user_prompt(question, hits)})
         payload: dict[str, Any] = {
             "model": self.model,
             "temperature": self.temperature,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": _user_prompt(question, hits)},
-            ],
+            "messages": messages,
         }
         response = await self.client.request(
             "POST",
@@ -161,4 +193,4 @@ def _citation(index: int, hit: SearchHit) -> Citation:
     )
 
 
-__all__ = ["Answer", "Citation", "Synthesizer", "build_answer", "citation_answer"]
+__all__ = ["Answer", "ChatTurn", "Citation", "Synthesizer", "build_answer", "citation_answer"]

@@ -514,3 +514,67 @@ def test_status_probe_unreachable_index(tmp_path: Path, monkeypatch) -> None:
     )
     assert result.exit_code == 0
     assert "unreachable" in result.output
+
+
+def test_chat_multi_turn_session_without_llm_key(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """No chat API key configured -> offline citation fallback each turn."""
+    from alvis.core.models import Chunk
+    from alvis.embed.hash import HashEmbedder
+    from alvis.index import MemoryIndex
+
+    config = tmp_path / "p.yaml"
+    config.write_text(
+        "pipeline:\n"
+        "  source:\n"
+        "    type: fs\n"
+        "    config:\n"
+        f"      path: {tmp_path}\n"
+        "  index:\n"
+        "    type: memory\n",
+        encoding="utf-8",
+    )
+    indexer = MemoryIndex()
+    embedder = HashEmbedder()
+    vector = asyncio.run(embedder.embed(Chunk(text="install alvis", source_uri="q")))
+    asyncio.run(
+        indexer.upsert(
+            Chunk(text="install alvis via pip", source_uri="u/install"),
+            vector,
+            source_id="s",
+            artifact_hash="h",
+        )
+    )
+    monkeypatch.setattr("alvis.pipeline.runner.build_indexer", lambda *a, **k: indexer)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    result = runner.invoke(
+        app,
+        ["chat", str(config)],
+        input="how do I install it?\nexit\n",
+    )
+
+    assert result.exit_code == 0
+    assert "Alvis chat" in result.output
+    assert "u/install" in result.output
+    assert "not set; falling back to numbered excerpts" in result.output
+
+
+def test_chat_rejects_malformed_filter(tmp_path: Path) -> None:
+    config = tmp_path / "p.yaml"
+    config.write_text(
+        "pipeline:\n"
+        "  source:\n"
+        "    type: fs\n"
+        "    config:\n"
+        f"      path: {tmp_path}\n"
+        "  index:\n"
+        "    type: memory\n",
+        encoding="utf-8",
+    )
+    result = runner.invoke(
+        app, ["chat", str(config), "--filter", "no-equals-sign"], input="exit\n"
+    )
+    assert result.exit_code == 1
+    assert "Error" in result.output

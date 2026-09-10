@@ -78,6 +78,38 @@ async def test_run_many_failure_propagates(tmp_path: Path) -> None:
         await run_many_async([config])
 
 
+async def test_answer_async_threads_history_into_synthesizer(tmp_path: Path) -> None:
+    import json
+
+    from alvis.answer import ChatTurn, Synthesizer
+    from alvis.index import MemoryIndex
+    from alvis.pipeline.runner import answer_async
+    from alvis.testing import MockServer
+
+    config = _fs_pipeline(tmp_path, "docs", "# Doc\n\ninstall alvis via pip\n")
+    indexer = MemoryIndex()
+    await run_async(config, indexer=indexer)
+
+    server = MockServer()
+    server.on(
+        "POST",
+        "/chat/completions",
+        json_payload={"choices": [{"message": {"content": "You already know [1]."}}]},
+    )
+    llm = Synthesizer(base_url="http://llm.local", model="m", transport=server.transport)
+    history = [ChatTurn(question="q1", answer="a1")]
+
+    result = await answer_async(
+        config, "how do I install?", indexer=indexer, llm=llm, history=history
+    )
+
+    assert result.text.startswith("You already know")
+    payload = json.loads(server.requests[0].content)
+    messages = payload["messages"]
+    assert messages[1] == {"role": "user", "content": "q1"}
+    assert messages[2] == {"role": "assistant", "content": "a1"}
+
+
 async def test_importable_from_package() -> None:
     import alvis
 

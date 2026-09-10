@@ -382,10 +382,37 @@ OpenAI), and falls back to numbered excerpts when no API key is set:
 alvis query examples/pgvector.yaml --text "how do I install alvis?" --answer
 ```
 
+`alvis chat` is the multi-turn version — an interactive REPL that keeps the
+conversation's prior question/answer turns in memory and replays them into
+each answer's synthesis prompt, so a follow-up like "what about the
+timeout?" is answered with that context. It's a different command, not an
+`--answer` flag, because the memory only exists for the life of a running
+process (there's no session persisted to disk). Retrieval itself still runs
+on each turn's own text — there is no query-rewriting from history, so a
+follow-up whose retrieval-relevant terms only exist in an earlier turn may
+still miss the right chunks even though the *answer* sounds aware of the
+conversation:
+
+```bash
+alvis chat examples/pgvector.yaml --top-k 5
+you> how do I install alvis?
+alvis> Run `pip install alvis` [1].
+  [1] docs/getting-started.md
+you> and which Python versions does that need?
+alvis> Python 3.10+ [1].
+  [1] docs/getting-started.md
+you> exit
+```
+
+Same `--filter`/`--principal`/`--hybrid`/`--rerank`/`--answer-*` options as
+`query`; without `--answer-api-token-env` set it still works, falling back
+to numbered excerpts each turn (with no conversation memory in that mode,
+since there's no model to hand the history to).
+
 Programmatically (same contract as ingestion):
 
 ```python
-from alvis import query, query_async, answer, answer_async, Synthesizer, LLMReranker
+from alvis import query, query_async, answer, answer_async, Synthesizer, LLMReranker, ChatTurn
 
 hits = query("examples/pgvector.yaml", "how do I install alvis?", top_k=5)
 await query_async("examples/pgvector.yaml", "how do I install alvis?")
@@ -402,6 +429,10 @@ llm = Synthesizer(base_url="https://api.openai.com/v1", model="gpt-4o-mini",
 result = answer("examples/pgvector.yaml", "how do I install alvis?", llm=llm)
 result.text                      # "Run `pip install alvis` [1], ..."
 result.citations                 # [Citation(index=1, source_uri=..., ...)]
+
+# multi-turn: replay prior turns into the next answer's synthesis prompt
+history = [ChatTurn(question="how do I install alvis?", answer=result.text)]
+followup = answer("examples/pgvector.yaml", "which Python versions?", llm=llm, history=history)
 ```
 
 `SearchHit` carries `text`, `source_uri`, `metadata`, and a cosine `score`
@@ -418,8 +449,18 @@ alvis run examples/eval-pipeline.yaml
 alvis eval examples/eval-pipeline.yaml examples/eval-cases.yaml --min-hit-rate 0.9
 ```
 
+Add `--judge` to also synthesize an answer per case and score it for
+faithfulness/relevancy via an LLM judge (`alvis.judge.AnswerJudge`) — a
+separate axis from retrieval hit rate, the one other opt-in besides
+`--rerank` that needs an API key:
+
+```bash
+alvis eval examples/eval-pipeline.yaml examples/eval-cases.yaml --judge
+```
+
 See [docs/evaluation.md](docs/evaluation.md) for the case format, metrics
-(hit rate, MRR), and the programmatic `alvis.evaluate`/`evaluate_async` API.
+(hit rate, MRR, faithfulness, relevancy), and the programmatic
+`alvis.evaluate`/`evaluate_async` API.
 
 ## Embedding in your application
 

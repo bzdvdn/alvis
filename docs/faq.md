@@ -106,6 +106,19 @@ with `[N]` citations tied to each `source_uri`. Without an API key,
 `alvis query --answer` falls back to numbered excerpts instead of failing:
 `answer(cfg, question, llm=Synthesizer(...))` / CLI `--answer`.
 
+## Can I ask follow-up questions?
+
+Yes — `alvis chat <config>` is an interactive multi-turn REPL: it keeps the
+session's prior question/answer turns and replays them into each answer's
+synthesis prompt (`alvis.answer.ChatTurn`), so "what about the timeout for
+that?" is understood in context. It's a separate command from `query
+--answer` because the history only lives in that running process, not on
+disk. Retrieval itself still runs on each turn's own text — there's no
+query-rewriting from history — so a follow-up whose retrieval-relevant
+terms only appear in an earlier turn can still miss the right chunks even
+though the answer reads as aware of the conversation. Programmatically:
+`answer(cfg, question, llm=..., history=[ChatTurn(question=..., answer=...), ...])`.
+
 ## Can I restrict who sees what in retrieval?
 
 Yes, at the source level: `source.config.acl: [principal, ...]` stamps a

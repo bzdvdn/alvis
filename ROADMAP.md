@@ -52,7 +52,12 @@ Goal: go from "nearest chunks" to a cited answer, the workflow corporate users a
 - [x] Response synthesis with citations: `alvis.answer` (`Synthesizer` on the OpenAI-compatible chat contract; `[N]` markers → `Citation`s; offline `citation_answer` fallback so `--answer` works with no API key) + CLI `alvis query --answer`
 - [x] Metadata filters + hybrid search (dense + BM25/full-text, Reciprocal Rank Fusion) — `Indexer.search(filters=...)` / `KeywordIndexer.keyword_search` implemented on every built-in backend (`memory`/`sqlite` BM25 locally, `pgvector` via `tsvector`/`ts_rank`, `qdrant` via a full-text payload index + local BM25 over the candidate pool); CLI `alvis query --filter key=value --hybrid`
 - [x] Reranking over retrieved candidates — `alvis.rerank.LLMReranker` (LLM-based, not a local cross-encoder — no local ML model dependency by design, see CONSTITUTION); fails soft to the original order on any error; CLI `alvis query --rerank`
-- [ ] Multi-turn chat with history (follow-up questions)
+- [x] Multi-turn chat with history (follow-up questions) — `alvis.answer.ChatTurn`
+  + `Synthesizer.answer(..., history=...)` replays prior turns as alternating
+  user/assistant messages into the synthesis prompt; `answer`/`answer_async` gain
+  `history`; CLI `alvis chat` is an interactive REPL keeping the session's
+  transcript in memory. Retrieval itself is not history-aware (no query
+  rewriting) — only synthesis sees the conversation.
 - [x] Evaluation harness — `alvis.evaluation` (hit rate / MRR against a fixed case set) + CLI `alvis eval`; scores retrieval quality (did the right chunk come back), not yet answer quality (faithfulness/relevancy via an LLM judge) — that half is still open, see `docs/evaluation.md`'s Scope section
 
 **Done when:** a user asks a natural-language question and gets a cited, grounded answer — with or without an LLM key.
@@ -137,8 +142,12 @@ which needed a contract-breaking change.
 - [x] DSL/YAML parity audit — `alvis.dsl` builders were missing `max_bytes` and the
   new `max_concurrency` knobs on several source/embedder builders (YAML always
   supported them via the raw config dict; the typed builders had to catch up by hand).
-- [ ] Answer-quality evaluation (faithfulness/relevancy via an LLM judge) — the
-  retrieval-only eval harness from v0.3 stops short of this; still open.
+- [x] Answer-quality evaluation (faithfulness/relevancy via an LLM judge) —
+  `alvis.judge.AnswerJudge` scores a synthesized answer against its excerpts on
+  both axes; `evaluate`/`evaluate_async` accept `llm`+`judge` to opt in (default
+  stays retrieval-only, no API key needed); CLI `alvis eval --judge`
+  (`--answer-*` for the synthesis model, `--judge-*` for the grading model — can
+  differ, e.g. a stronger judge grading a cheaper model's answers).
 - [ ] Vector-store breadth beyond `qdrant`/`pgvector` (Elasticsearch/OpenSearch,
   Weaviate, Pinecone, ...) — the Plugin SDK makes this possible externally, but
   nothing ships in-tree; likely the single biggest adoption blocker against

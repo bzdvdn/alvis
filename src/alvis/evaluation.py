@@ -13,10 +13,13 @@ right content. This module closes that gap with a small, LLM-free harness:
 - :func:`load_cases` — read cases from a YAML file (a plain list of
   ``{query, expected_source_uri}`` mappings).
 
-This proves *retrieval* quality (did the right chunk come back), not
-*answer* quality (faithfulness/relevancy over an LLM's response) — that is
-a separate, LLM-judge-based harness for later; this one runs in CI with no
-API key, same as the rest of the test suite.
+By default this proves *retrieval* quality (did the right chunk come
+back), not *answer* quality. Passing both ``llm`` and ``judge`` opts into
+the second, separate axis: each case's hits are synthesized into an
+answer (:class:`alvis.answer.Synthesizer`) and graded by an LLM judge
+(:class:`alvis.judge.AnswerJudge`) for faithfulness and relevancy — see
+:mod:`alvis.judge`. The harness still needs no LLM/API key by default;
+``rerank``/``llm``+``judge`` are the opt-in exceptions.
 """
 
 from __future__ import annotations
@@ -29,11 +32,14 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, ConfigDict
 
+from alvis.answer import Answer, Synthesizer, citation_answer
 from alvis.config import ConfigError
 from alvis.core.models import SearchHit
 from alvis.index.base import Indexer
+from alvis.judge import AnswerJudge, JudgeScore
 from alvis.pipeline.runner import ConfigLike, query_async
 from alvis.rerank import LLMReranker
+from alvis.sources.base import SourceError
 
 
 class EvalCase(BaseModel):
@@ -59,6 +65,11 @@ class EvalCaseResult:
     hits: tuple[SearchHit, ...]
     rank: int | None
     """1-based rank of the first hit whose ``source_uri`` matches, else ``None``."""
+    answer: Answer | None = None
+    """Synthesized answer over ``hits``, only set when ``evaluate`` was given
+    both ``llm`` and ``judge``."""
+    judge: JudgeScore | None = None
+    """LLM-judge verdict on ``answer``, only set alongside ``answer``."""
 
     @property
     def hit(self) -> bool:
@@ -91,6 +102,27 @@ class EvalReport:
         """Cases where the expected document did not come back at all."""
         return tuple(r for r in self.results if not r.hit)
 
+    @property
+    def judged(self) -> tuple[EvalCaseResult, ...]:
+        """Cases that were also answer-quality judged (``judge`` was given)."""
+        return tuple(r for r in self.results if r.judge is not None)
+
+    @property
+    def mean_faithfulness(self) -> float:
+        """Mean judge faithfulness over :attr:`judged` cases (0.0 if none)."""
+        judged = self.judged
+        if not judged:
+            return 0.0
+        return sum(r.judge.faithfulness for r in judged if r.judge) / len(judged)
+
+    @property
+    def mean_relevancy(self) -> float:
+        """Mean judge relevancy over :attr:`judged` cases (0.0 if none)."""
+        judged = self.judged
+        if not judged:
+            return 0.0
+        return sum(r.judge.relevancy for r in judged if r.judge) / len(judged)
+
 
 def load_cases(path: str | Path) -> list[EvalCase]:
     """Load eval cases from a YAML file: a list of ``{query, expected_source_uri}``.
@@ -120,6 +152,8 @@ async def evaluate_async(
     hybrid: bool = False,
     rerank: LLMReranker | None = None,
     principals: Sequence[str] | None = None,
+    llm: Synthesizer | None = None,
+    judge: AnswerJudge | None = None,
 ) -> EvalReport:
     """Run every case's query against the configured index and score retrieval.
 
@@ -128,9 +162,15 @@ async def evaluate_async(
     and ``rerank`` are passed straight through to
     :func:`alvis.pipeline.runner.query_async` — use them to compare
     dense-only vs. dense+BM25 vs. reranked hit rate on the same cases. The
-    harness needs no LLM/API key by default; passing ``rerank`` is the one
-    way to opt into one. ``principals`` is the default identity for every
+    harness needs no LLM/API key by default; passing ``rerank`` is one way
+    to opt into one. ``principals`` is the default identity for every
     case; a case's own ``principals`` (if set) overrides it.
+
+    Passing both ``llm`` and ``judge`` additionally synthesizes an answer
+    over each case's hits and scores it for faithfulness/relevancy (see
+    :mod:`alvis.judge`) — a second, separate axis from retrieval hit rate;
+    giving only one of the two leaves answer-quality scoring off (retrieval
+    is still scored either way).
     """
     results: list[EvalCaseResult] = []
     for case in cases:
@@ -152,7 +192,19 @@ async def evaluate_async(
             ),
             None,
         )
-        results.append(EvalCaseResult(case=case, hits=tuple(hits), rank=rank))
+        answer_obj: Answer | None = None
+        judge_score: JudgeScore | None = None
+        if llm is not None and judge is not None:
+            try:
+                answer_obj = await llm.answer(case.query, hits)
+            except SourceError:
+                answer_obj = citation_answer(case.query, hits, reason="LLM call failed")
+            judge_score = await judge.score(case.query, answer_obj.text, hits)
+        results.append(
+            EvalCaseResult(
+                case=case, hits=tuple(hits), rank=rank, answer=answer_obj, judge=judge_score
+            )
+        )
     return EvalReport(results=tuple(results))
 
 
@@ -165,6 +217,8 @@ def evaluate(
     hybrid: bool = False,
     rerank: LLMReranker | None = None,
     principals: Sequence[str] | None = None,
+    llm: Synthesizer | None = None,
+    judge: AnswerJudge | None = None,
 ) -> EvalReport:
     """Synchronous variant of :func:`evaluate_async`."""
     return asyncio.run(
@@ -176,6 +230,8 @@ def evaluate(
             hybrid=hybrid,
             rerank=rerank,
             principals=principals,
+            llm=llm,
+            judge=judge,
         )
     )
 

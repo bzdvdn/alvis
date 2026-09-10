@@ -23,7 +23,7 @@ from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
 from pathlib import Path
 
 from alvis._lifecycle import aclose_quietly
-from alvis.answer import Answer, Synthesizer, citation_answer
+from alvis.answer import Answer, ChatTurn, Synthesizer, citation_answer
 from alvis.config import ConfigError, PipelineConfig, load_config
 from alvis.core.models import Chunk, SearchHit
 from alvis.docstore import DocStore
@@ -248,6 +248,7 @@ async def answer_async(
     hybrid: bool = False,
     rerank: LLMReranker | None = None,
     principals: Sequence[str] | None = None,
+    history: Sequence[ChatTurn] | None = None,
 ) -> Answer:
     """Retrieve the closest chunks and synthesize a cited answer.
 
@@ -257,6 +258,12 @@ async def answer_async(
     itself, so answering is possible with the ``default`` embedder and no
     API key. ``filters``, ``hybrid``, ``rerank``, and ``principals``
     narrow/blend/reorder/scope retrieval as in :func:`query_async`.
+
+    ``history`` (optional) replays prior question/answer turns of the same
+    conversation into the synthesis prompt, for follow-up questions — see
+    :class:`alvis.answer.ChatTurn`. Retrieval for ``text`` itself is not
+    aware of ``history`` (no query rewriting), so it still runs on the raw
+    follow-up text.
     """
     hits = await query_async(
         config,
@@ -271,7 +278,7 @@ async def answer_async(
     if llm is None:
         return citation_answer(text, hits)
     try:
-        return await llm.answer(text, hits)
+        return await llm.answer(text, hits, history=history)
     except SourceError:
         return citation_answer(text, hits, reason="LLM call failed")
 
@@ -287,6 +294,7 @@ def answer(
     hybrid: bool = False,
     rerank: LLMReranker | None = None,
     principals: Sequence[str] | None = None,
+    history: Sequence[ChatTurn] | None = None,
 ) -> Answer:
     """Synchronous variant of :func:`answer_async`."""
     return asyncio.run(
@@ -300,6 +308,7 @@ def answer(
             hybrid=hybrid,
             rerank=rerank,
             principals=principals,
+            history=history,
         )
     )
 

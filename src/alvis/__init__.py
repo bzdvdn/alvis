@@ -1,7 +1,7 @@
 """Alvis — no-code knowledge ingestion engine."""
 
 from alvis import dsl
-from alvis.answer import Answer, Citation, Synthesizer, citation_answer
+from alvis.answer import Answer, ChatTurn, Citation, Synthesizer, citation_answer
 from alvis.evaluation import (
     EvalCase,
     EvalCaseResult,
@@ -10,6 +10,7 @@ from alvis.evaluation import (
     evaluate_async,
     load_cases,
 )
+from alvis.judge import AnswerJudge, JudgeScore
 from alvis.pipeline.engine import PipelineEngine, PipelineResult
 from alvis.pipeline.runner import (
     answer,
@@ -29,10 +30,13 @@ __version__ = "1.0.0rc2"
 
 __all__ = [
     "Answer",
+    "AnswerJudge",
+    "ChatTurn",
     "Citation",
     "EvalCase",
     "EvalCaseResult",
     "EvalReport",
+    "JudgeScore",
     "LLMReranker",
     "PipelineEngine",
     "PipelineResult",

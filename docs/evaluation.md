@@ -78,10 +78,40 @@ that doesn't declare its own `principals`.
   miss); rewards the expected document coming back *first*, not just
   somewhere in the list.
 
+## Answer-quality judging (`--judge`)
+
+Everything above measures *retrieval* — did the right chunk come back.
+`--judge` measures the next step: each case's hits are synthesized into an
+answer, and an LLM judge scores it for **faithfulness** (does every claim
+follow from the excerpts, with no invention?) and **relevancy** (does the
+answer actually address the question?) — a separate axis from hit rate,
+and the one opt-in beyond `--rerank` that needs an API key:
+
+```bash
+alvis eval examples/eval-pipeline.yaml examples/eval-cases.yaml --judge
+```
+
+```text
+4 case(s): hit_rate=1.00 mrr=1.00
+  answer quality: faithfulness=0.95 relevancy=0.90
+  [rank 1] 'how do I install alvis with pip' -> alvis-guide.md
+      judge: faithfulness=1.00 relevancy=1.00 — answer cites the pip install line directly
+  ...
+```
+
+`--answer-base-url/--answer-model/--answer-api-token-env` configure the
+model that *synthesizes* each case's answer (same defaults as `query
+--answer`); `--judge-base-url/--judge-model/--judge-api-token-env`
+configure the *grading* model separately — point a stronger or
+independent model at grading a cheaper one's answers. Missing either API
+key skips judging with a warning (retrieval is still scored). `--json`
+adds `mean_faithfulness`/`mean_relevancy` to the report when `--judge` was
+used.
+
 ## Programmatically
 
 ```python
-from alvis import evaluate, evaluate_async, load_cases, EvalCase
+from alvis import evaluate, evaluate_async, load_cases, EvalCase, Synthesizer, AnswerJudge
 
 cases = load_cases("eval-cases.yaml")
 report = evaluate("pipeline.yaml", cases, top_k=5)
@@ -90,12 +120,24 @@ report.mrr
 report.misses        # EvalCaseResult entries that didn't hit
 
 evaluate("pipeline.yaml", cases, principals=["eng"])  # default identity for every case
+
+# answer-quality judging: needs both an answer-synthesis LLM and a judge
+llm = Synthesizer(base_url="https://api.openai.com/v1", model="gpt-4o-mini",
+                  api_token_env="OPENAI_API_KEY")
+judge = AnswerJudge(base_url="https://api.openai.com/v1", model="gpt-4o-mini",
+                    api_token_env="OPENAI_API_KEY")
+judged = evaluate("pipeline.yaml", cases, llm=llm, judge=judge)
+judged.mean_faithfulness    # 0.0 - 1.0, averaged over judged cases
+judged.mean_relevancy
+judged.results[0].answer    # the synthesized Answer for the first case
+judged.results[0].judge     # JudgeScore(faithfulness=..., relevancy=..., reason=...)
 ```
 
 ## Scope
 
-This measures *retrieval* quality — did the right chunk come back — not
-*answer* quality (faithfulness/relevancy of a synthesized response, which
-needs an LLM judge). That is a separate harness for later; this one runs
-in CI with no API key by default, same as the rest of the test suite
-(`--rerank` is the exception, since reranking itself needs an LLM).
+Retrieval scoring (hit rate/MRR) runs in CI with no API key by default,
+same as the rest of the test suite. `--rerank` and `--judge` are the two
+opt-ins that need one — reranking and answer-quality judging both
+genuinely need an LLM; there's no offline approximation for either that
+the project's zero-local-ML-dependency philosophy could compute from
+scratch (see `CONSTITUTION.md`).

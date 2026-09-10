@@ -80,6 +80,110 @@ async def test_evaluate_reports_misses_for_unrelated_query() -> None:
     assert report.misses[0].rank is None
 
 
+async def test_evaluate_async_judges_answer_quality_with_llm_and_judge() -> None:
+    import httpx
+
+    from alvis.answer import Synthesizer
+    from alvis.judge import AnswerJudge
+
+    indexer = await _seeded_docs_index()
+    cases = load_cases(EXAMPLES / "eval-cases.yaml")[:1]
+
+    async def answer_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": "Run pip install alvis [1]."}}]}
+        )
+
+    async def judge_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"faithfulness": 1.0, "relevancy": 1.0, "reason": "matches"}'
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    llm = Synthesizer(
+        base_url="http://llm.local", model="m", transport=httpx.MockTransport(answer_handler)
+    )
+    judge = AnswerJudge(
+        base_url="http://judge.local", model="m", transport=httpx.MockTransport(judge_handler)
+    )
+
+    report = await evaluate_async(
+        _config(), cases, top_k=3, indexer=indexer, llm=llm, judge=judge
+    )
+
+    assert report.judged
+    assert report.mean_faithfulness == pytest.approx(1.0)
+    assert report.mean_relevancy == pytest.approx(1.0)
+    assert report.results[0].answer is not None
+    assert report.results[0].answer.text.startswith("Run pip install")
+    assert report.results[0].judge is not None
+
+
+async def test_evaluate_async_skips_judging_without_both_llm_and_judge() -> None:
+    from alvis.answer import Synthesizer
+
+    indexer = await _seeded_docs_index()
+    cases = load_cases(EXAMPLES / "eval-cases.yaml")[:1]
+    llm = Synthesizer(base_url="http://llm.local", model="m")
+
+    report = await evaluate_async(_config(), cases, top_k=3, indexer=indexer, llm=llm)
+
+    assert not report.judged
+    assert report.results[0].answer is None
+    assert report.mean_faithfulness == 0.0
+
+
+def test_cli_eval_judge_warns_and_skips_without_api_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from typer.testing import CliRunner
+
+    from alvis.cli import app
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    config = tmp_path / "p.yaml"
+    docs = EXAMPLES / "docs"
+    config.write_text(
+        "pipeline:\n"
+        "  source:\n"
+        "    type: fs\n"
+        "    config:\n"
+        f"      path: {docs}\n"
+        "  chunk:\n"
+        "    strategy: sections\n"
+        "  index:\n"
+        "    type: sqlite\n"
+        "    config:\n"
+        f"      path: {tmp_path / 'eval-judge.db'}\n",
+        encoding="utf-8",
+    )
+    cases = tmp_path / "cases.yaml"
+    cases.write_text(
+        "- query: how do I install alvis with pip\n"
+        "  expected_source_uri: alvis-guide.md\n",
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    assert runner.invoke(app, ["run", str(config)]).exit_code == 0
+
+    result = runner.invoke(app, ["eval", str(config), str(cases), "--judge"])
+    assert result.exit_code == 0
+    assert "skipping answer-quality judging" in result.output
+    assert "hit_rate=1.00" in result.output
+    assert "answer quality" not in result.output
+
+
 def test_cli_eval_reports_hit_rate(tmp_path: Path) -> None:
     from typer.testing import CliRunner
 

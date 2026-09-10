@@ -14,6 +14,7 @@ from alvis import __version__
 
 # Each import registers its module's command(s) onto `app` as a side effect.
 from alvis.cli import (  # noqa: E402, F401
+    _chat,
     _eval,
     _init,
     _metrics,
