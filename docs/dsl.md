@@ -30,7 +30,7 @@ run(config)                      # sync run (own event loop)
 | builder                 | YAML equivalent | purpose                                   |
 | ----------------------- | --------------- | ----------------------------------------- |
 | `dsl.fs(path, pattern)` | `fs`            | text files under a directory              |
-| `dsl.confluence(...)`   | `confluence`    | pages of a Confluence space               |
+| `dsl.confluence(...)`   | `confluence`    | pages of a space, or one page tree        |
 | `dsl.github(...)`       | `github`        | blobs of a repository tree                |
 | `dsl.gitlab(project, group=, url=)` | `gitlab`    | project or group-repo blobs; self-hosted via `url`      |
 | `dsl.s3(...)`           | `s3`            | S3 bucket objects (SigV4, no boto3)       |

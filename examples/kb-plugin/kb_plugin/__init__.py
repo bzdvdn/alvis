@@ -76,4 +76,7 @@ plugin = Plugin(
     version="0.1.0",
     summary="Reads .txt files as catalog documents",
     sources={"catalog": _build_catalog},
+    # Two catalog pipelines must not share reconcile state merely because
+    # they both use ``type: catalog``.
+    source_identities={"catalog": lambda config: str(config.config["path"])},
 )

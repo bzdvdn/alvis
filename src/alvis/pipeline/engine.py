@@ -123,6 +123,8 @@ class PipelineEngine:
             "s3": "bucket",
         }.get(source.type)
         value = source.config.get(key) if key else None
+        if source.type == "confluence" and source.config.get("page_id") is not None:
+            return f"{source.type} (page_id={source.config['page_id']})"
         if value is not None:
             return f"{source.type} ({key}={value})"
         if source.type == "gitlab" and source.config.get("group") is not None:

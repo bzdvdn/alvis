@@ -218,6 +218,20 @@ support); copy it as your template and keep the tutorial contract: hello-world
 example + test + docs. External plugins are tracked in [docs/plugins.md]
 (docs/plugins.md).
 
+If your plugin only produces documents, implement
+`DocumentProvider.documents()` and return a
+`ProviderSource([provider], name="...")` from the factory instead of writing a
+`Source` by hand — the core supplies fingerprinting, artifact/document-meta
+construction, `fetch(uris=...)`, and fail-fast error handling. See
+`alvis.sources.provider` and [docs/plugins.md](docs/plugins.md).
+
+**Declare `source_identities`.** Reconcile state is keyed by
+`source_identity(config)`. The default for a plugin type is the type string
+alone, so two pipelines with different `config:` blocks would share state and
+delete each other's points. Provide
+`Plugin(source_identities={"my_type": lambda config: str(config.config["scope"])})`
+whenever the config selects a corpus.
+
 ---
 
 ## Contribution process

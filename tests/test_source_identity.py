@@ -84,3 +84,13 @@ def test_gdrive_sources_fall_back_to_key_env_when_no_folder_given() -> None:
     a = source_identity(SourceConfig(type="gdrive", config={"service_account_key_env": "A"}))
     b = source_identity(SourceConfig(type="gdrive", config={"service_account_key_env": "B"}))
     assert a != b
+
+
+def test_confluence_page_trees_get_distinct_identities() -> None:
+    url = "https://wiki.example.com"
+    a = source_identity(SourceConfig(type="confluence", config={"url": url, "page_id": "100"}))
+    b = source_identity(SourceConfig(type="confluence", config={"url": url, "page_id": "200"}))
+    space = source_identity(SourceConfig(type="confluence", config={"url": url, "space": "TEAM"}))
+    assert a != b
+    assert a != space
+    assert b != space

@@ -63,7 +63,8 @@ def fs(
 
 def confluence(
     url: str,
-    space: str,
+    space: str | None = None,
+    page_id: str | int | None = None,
     username: str | None = None,
     api_token_env: str | None = None,
     retries: int = 3,
@@ -72,17 +73,24 @@ def confluence(
     max_concurrency: int = 8,
     acl: list[str] | None = None,
 ) -> SourceConfig:
-    """Ingest pages of a Confluence space via its REST API.
+    """Ingest pages of a Confluence space or one page tree via its REST API.
+
+    Pass ``space`` for the whole space, or ``page_id`` for that page and all
+    of its descendants (e.g. only the support documentation tree). At least
+    one is required; ``page_id`` wins when both are given.
 
     ``max_concurrency`` bounds concurrent page-expansion requests.
     ``acl`` (optional) is a static list of principal strings stamped onto
     every artifact this source fetches — see ``docs/schema.md``.
     """
+    if not space and page_id is None:
+        raise ValueError("confluence requires 'space' or 'page_id'")
     return SourceConfig(
         type="confluence",
         config={
             "url": url,
-            "space": space,
+            **({"space": space} if space else {}),
+            **({"page_id": str(page_id)} if page_id is not None else {}),
             **({"username": username} if username else {}),
             **({"api_token_env": api_token_env} if api_token_env else {}),
             **({"retries": retries} if retries != 3 else {}),

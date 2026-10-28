@@ -16,7 +16,7 @@ import pytest
 
 from alvis import dsl, run_async
 from alvis.config.models import SourceConfig
-from alvis.factories import build_source
+from alvis.factories import build_source, source_identity
 from alvis.index import MemoryIndex
 from alvis.plugin import (
     KINDS,
@@ -115,6 +115,44 @@ def test_duplicate_type_registration_is_rejected() -> None:
     imposter = Plugin(name="imposter", version="0.0.0", sources={"catalog": lambda **kw: None})
     with pytest.raises(ValueError, match="already provided"):
         install_plugin(imposter)
+
+
+def test_plugin_source_identity_distinguishes_configs() -> None:
+    install_plugin(
+        Plugin(
+            name="multi-catalog",
+            version="1.0.0",
+            sources={"catalog": lambda **kw: object()},
+            source_identities={"catalog": lambda config: config.config["path"]},
+        )
+    )
+    a = source_identity(SourceConfig(type="catalog", config={"path": "/a"}))
+    b = source_identity(SourceConfig(type="catalog", config={"path": "/b"}))
+    assert a == "catalog:/a"
+    assert b == "catalog:/b"
+    assert a != b
+
+
+def test_plugin_source_identity_defaults_to_type_without_callback() -> None:
+    install_plugin(
+        Plugin(
+            name="plain",
+            version="1.0.0",
+            sources={"plain": lambda **kw: object()},
+        )
+    )
+    config = SourceConfig(type="plain", config={"path": "/a"})
+    assert source_identity(config) == "plain"
+
+
+def test_plugin_identity_for_unknown_source_is_rejected() -> None:
+    with pytest.raises(ValueError, match="does not provide"):
+        Plugin(
+            name="bad",
+            version="1.0.0",
+            sources={"known": lambda **kw: object()},
+            source_identities={"unknown": lambda config: config.type},
+        )
 
 
 def test_discovery_uses_the_process_registry_reset_clean() -> None:

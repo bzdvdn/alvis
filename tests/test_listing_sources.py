@@ -160,3 +160,62 @@ async def test_confluence_listing_fingerprints_page_version() -> None:
 
     artifacts = await source.fetch(uris={metas[0].uri})
     assert [a.metadata["id"] for a in artifacts] == ["100"]
+
+
+async def test_confluence_page_id_ingests_the_whole_subtree() -> None:
+    server = MockServer()
+
+    def _page(page_id: str, title: str, version: int = 1) -> dict:
+        return {
+            "id": page_id,
+            "title": title,
+            "_links": {"webui": f"/pages/viewpage.action?pageId={page_id}"},
+            "version": {"number": version},
+        }
+
+    server.on("GET", "/rest/api/content/200", json_payload=_page("200", "Support"))
+    server.on(
+        "GET",
+        "/rest/api/content/200/child/page",
+        json_payload={"results": [_page("201", "FAQ"), _page("202", "Guides")]},
+    )
+    server.on(
+        "GET",
+        "/rest/api/content/201/child/page",
+        json_payload={"results": [_page("203", "FAQ / Billing")]},
+    )
+    server.on("GET", "/rest/api/content/202/child/page", json_payload={"results": []})
+    server.on("GET", "/rest/api/content/203/child/page", json_payload={"results": []})
+    server.on(
+        "GET",
+        "/rest/api/content/203",
+        json_payload={
+            "id": "203",
+            "title": "FAQ / Billing",
+            "_links": {"webui": "/pages/viewpage.action?pageId=203"},
+            "body": {"storage": {"value": "<h1>Billing</h1><p>body</p>"}},
+        },
+    )
+
+    source = ConfluenceSource(url="http://localhost:8080", page_id="200")
+    source.client.transport = server.transport
+
+    metas = await source.list_documents()
+    assert [meta.step_id for meta in metas] == ["200", "201", "202", "203"]
+    assert [meta.uri for meta in metas] == [
+        "/pages/viewpage.action?pageId=200",
+        "/pages/viewpage.action?pageId=201",
+        "/pages/viewpage.action?pageId=202",
+        "/pages/viewpage.action?pageId=203",
+    ]
+    # No space listing was made: the tree is the only scope.
+    assert not [r for r in server.request_log() if r["path"] == "/rest/api/content"]
+
+    artifacts = await source.fetch(uris={metas[3].uri})
+    assert [artifact.step_id for artifact in artifacts] == ["203"]
+    assert artifacts[0].data == b"<h1>Billing</h1><p>body</p>"
+
+
+def test_confluence_requires_space_or_page_id() -> None:
+    with pytest.raises(ValueError, match="requires 'space' or 'page_id'"):
+        ConfluenceSource(url="http://localhost:8080")

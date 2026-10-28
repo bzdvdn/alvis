@@ -98,6 +98,9 @@ Goal: third parties can extend Alvis without touching the core.
 - [x] Plugin packaging: separate installable extension packages — `examples/kb-plugin` (editable-installed and run end-to-end in CI-equivalent tests) proves the "side package, zero core changes" path
 - [x] Manifest + discovery: plugins register via `alvis.plugins` entry points; discovery is lazy, idempotent, and broken packages are skipped with a warning
 - [x] Community connector registry — `docs/plugins.md` (built-in table + published-plugin rows) + `alvis plugins` CLI listing
+- [x] Reusable provider adapter — `alvis.sources.ProviderSource` + `DocumentProvider`/`SourceDocument` handle fingerprinting, `DocumentMeta`/`Artifact` construction, `fetch(uris=...)`, duplicate detection, and fail-fast errors, so simple plugins return documents instead of reimplementing `ListingSource`
+- [x] Per-config plugin source identities — `Plugin.source_identities` prevents two pipelines over the same plugin type from sharing reconcile state
+- [x] Confluence page-tree scoping — `page_id` ingests one page and its descendants recursively, alongside the existing whole-`space` mode
 
 **Done when:** a side project adds a connector as a separate PyPI package with zero core changes. (Infrastructure shipped; an external contribution is the remaining proof.)
 

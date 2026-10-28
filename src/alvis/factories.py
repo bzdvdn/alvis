@@ -62,7 +62,11 @@ def source_identity(config: SourceConfig) -> str:
     if config.type == "fs":
         return f"fs:{config.config.get('path', '')}"
     if config.type == "confluence":
-        return f"confluence:{config.config.get('space', '')}@{config.config.get('url', '')}"
+        url = config.config.get("url", "")
+        page_id = config.config.get("page_id")
+        if page_id is not None:
+            return f"confluence:page:{page_id}@{url}"
+        return f"confluence:{config.config.get('space', '')}@{url}"
     if config.type == "github":
         return f"github:{config.config.get('repo', '')}"
     if config.type == "gitlab":
@@ -88,6 +92,9 @@ def source_identity(config: SourceConfig) -> str:
             "service_account_key_env", ""
         )
         return f"gdrive:{scope}"
+    plugin_identity = registry().source_identity(config.type)
+    if plugin_identity is not None:
+        return f"{config.type}:{plugin_identity(config)}"
     return config.type
 
 

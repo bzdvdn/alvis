@@ -7,10 +7,10 @@ versioning for YAML / Canonical Content Tree (see
 
 ## Release numbers
 
-- **`1.0.0rc3` (current release candidate).** The stable surface is frozen;
-  RC releases may still contain release-blocking fixes, but no intentional
-  contract changes. The stable surface below is honored from its freeze and
-  beyond `1.0.0`.
+- **`1.1.0rc1` (current release candidate).** Additive over the `1.0.0`
+  surface: a reusable provider adapter, opt-in plugin source identities, and
+  Confluence page-tree scoping. No stable-surface name was removed or
+  re-signed.
 - **`1.0.0`.** Freezes the stable surface; `MAJOR` thereafter means a
   breaking change to it. Anything not listed is public-but-internal and may
   change with a `MINOR` bump and a changelog note.

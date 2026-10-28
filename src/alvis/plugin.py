@@ -28,7 +28,9 @@ A minimal plugin package::
     kb-catalog = "kb_plugin:plugin"
 
 The entry point value may be the ``Plugin`` instance itself (as above) or a
-callable returning one.
+callable returning one. A source plugin whose config can select different
+corpora should also declare ``source_identities`` (see :class:`Plugin`) so two
+instances do not share reconcile state.
 
 After ``pip install kb-catalog`` the adapter just works::
 
@@ -60,6 +62,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from importlib.metadata import EntryPoint
 from pathlib import Path
+from typing import Any
 
 KINDS = ("source", "extractor", "chunker", "embedder", "indexer")
 """The five pluggable adapter kinds, used as registry keys."""
@@ -86,6 +89,14 @@ class Plugin:
     Each named adapter kind maps *type strings* (the value of ``type:`` /
     ``strategy:`` in a pipeline config) to a factory implementing the
     contract documented in :mod:`alvis.plugin`.
+
+    ``source_identities`` optionally maps a source type string to a callable
+    that receives the source's ``SourceConfig`` and returns the
+    ``source_identity`` suffix (the part after ``"<type>:"``). Without it, all
+    instances of one plugin source type share the type string as their
+    identity, so two pipelines over different corpora would reconcile (and
+    prune) each other's points. Any plugin type whose config can select a
+    different corpus should provide it.
     """
 
     name: str
@@ -96,6 +107,25 @@ class Plugin:
     chunkers: Mapping[str, Factory] = field(default_factory=dict)
     embedders: Mapping[str, Factory] = field(default_factory=dict)
     indexers: Mapping[str, Factory] = field(default_factory=dict)
+    source_identities: Mapping[str, Callable[[Any], str]] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        unknown = set(self.source_identities) - set(self.sources)
+        if unknown:
+            raise ValueError(
+                f"plugin {self.name!r} defines source identities for types it "
+                f"does not provide: {sorted(unknown)}"
+            )
+        not_callable = [
+            type_str
+            for type_str, identity in self.source_identities.items()
+            if not callable(identity)
+        ]
+        if not_callable:
+            raise ValueError(
+                f"plugin {self.name!r} source identities must be callables: "
+                f"{sorted(not_callable)}"
+            )
 
     def provided_types(self, kind: str) -> dict[str, Factory]:
         """The type-string → factory map for ``kind`` (empty if not provided)."""
@@ -109,6 +139,7 @@ class PluginRegistry:
         self._plugins: list[Plugin] = []
         self._loaded_entry_points: set[tuple[str, str]] = set()
         self._by_kind: dict[str, dict[str, Factory]] = {kind: {} for kind in KINDS}
+        self._source_identities: dict[str, Callable[[Any], str]] = {}
 
     def install(self, plugin: Plugin) -> None:
         for kind in KINDS:
@@ -120,6 +151,7 @@ class PluginRegistry:
                         "which is already provided by another plugin"
                     )
                 self._by_kind[kind][type_str] = factory
+        self._source_identities.update(plugin.source_identities)
         self._plugins.append(plugin)
 
     def discover(
@@ -169,6 +201,10 @@ class PluginRegistry:
 
     def known_types(self, kind: str) -> set[str]:
         return set(self._by_kind[kind])
+
+    def source_identity(self, type_str: str) -> Callable[[Any], str] | None:
+        """The plugin-provided identity suffix for a source type, if any."""
+        return self._source_identities.get(type_str)
 
     def __iter__(self) -> Iterator[Plugin]:
         return iter(self._plugins)

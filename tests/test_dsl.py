@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from alvis import dsl
 from alvis.config import load_config
 from alvis.pipeline.runner import run_async
@@ -291,6 +293,17 @@ def test_confluence_dsl_max_concurrency_roundtrips() -> None:
     assert cfg.config["max_concurrency"] == 3
     default = dsl.confluence(url="https://wiki.example.com", space="TEAM")
     assert "max_concurrency" not in default.config
+
+
+def test_confluence_dsl_supports_page_tree_scope() -> None:
+    cfg = dsl.confluence(url="https://wiki.example.com", page_id=123)
+    assert cfg.config["page_id"] == "123"
+    assert "space" not in cfg.config
+
+
+def test_confluence_dsl_requires_space_or_page_id() -> None:
+    with pytest.raises(ValueError, match="requires 'space' or 'page_id'"):
+        dsl.confluence(url="https://wiki.example.com")
 
 
 def test_embed_openai_dsl_max_concurrency_roundtrips() -> None:

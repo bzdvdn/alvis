@@ -2,6 +2,49 @@
 
 All notable changes to Alvis are documented here.
 
+## [1.1.0rc1] - 2026-10-28
+
+Plugin SDK ergonomics and scoped source ingestion. This release is additive
+over the `1.0.0` surface: no adapter protocol, config key, or API is removed,
+and existing pipelines keep working unchanged.
+
+### Added
+
+- **`ProviderSource` / `DocumentProvider`** (`alvis.sources.provider`): a
+  reusable adapter that turns any provider returning `SourceDocument`s into a
+  `ListingSource` — content fingerprints, `DocumentMeta`/`Artifact`
+  construction, `fetch(uris=...)`, duplicate-id detection, provider caching,
+  `max_bytes`, optional `aclose()`, and fail-fast `SourceError` wrapping.
+  Providers only implement `async def documents()`; one `ProviderSource` can
+  compose several of them. Fingerprints cover identity/content, not volatile
+  metadata (e.g. fetch timestamps), so a normal re-run does not re-embed the
+  corpus.
+- **Plugin source identities.** `Plugin.source_identities` maps a source type
+  to a callable deriving its `source_identity` from config (e.g. a catalog
+  path), so two pipelines using the same plugin type no longer share reconcile
+  state and prune each other's points. The core prefixes the returned value
+  with `"<type>:"`; plugins without the hook keep the previous type-only
+  fallback.
+- **Confluence page-tree scoping.** `confluence` now accepts `page_id` to
+  ingest that page and every descendant recursively (handy for a single
+  support tree) instead of the whole space; `space` remains supported and is
+  now paginated. DSL (`dsl.confluence(page_id=...)`), `source_identity`
+  (`confluence:page:<id>@<url>`), `alvis describe`, README, and plugin docs
+  updated.
+
+### Fixed
+
+- Reconcile collisions between two pipelines that use the same plugin source
+  type with different configs. `Plugin.source_identities` is the supported
+  opt-in; existing plugins keep the old fallback until they adopt it.
+
+### Upgrade notes
+
+- No breaking changes. Existing `space`-based Confluence pipelines and plugin
+  packages continue to work as before.
+- Plugin authors with multi-instance source types should add
+  `source_identities`; the reference `examples/kb-plugin` now does.
+
 ## [1.0.0rc3] - 2026-09-10
 
 Retrieval quality, multi-tenancy, production hardening, and four new source

@@ -9,7 +9,7 @@ Source → Artifact → Extraction → Canonical Content Tree → Chunking → E
 
 ## Status
 
-`1.0.0rc3` (release candidate). Core pipeline runs end-to-end: fs/Confluence/GitHub/GitLab/S3/Notion/Jira/SharePoint/Google Drive/static-URL sources → extract → chunk → embed → memory/SQLite/Qdrant/pgvector/Elasticsearch index, plus retrieval (dense, hybrid, reranked, ACL-filtered — `alvis.query`, CLI `alvis query`/`alvis chat`) and evaluation (`alvis eval`, retrieval + answer quality). Async-native (httpx). The embedder ships a deterministic placeholder (`default`) plus an OpenAI-compatible API adapter (`openai`).
+`1.1.0rc1` (release candidate). Core pipeline runs end-to-end: fs/Confluence/GitHub/GitLab/S3/Notion/Jira/SharePoint/Google Drive/static-URL sources → extract → chunk → embed → memory/SQLite/Qdrant/pgvector/Elasticsearch index, plus retrieval (dense, hybrid, reranked, ACL-filtered — `alvis.query`, CLI `alvis query`/`alvis chat`) and evaluation (`alvis eval`, retrieval + answer quality). Async-native (httpx). The embedder ships a deterministic placeholder (`default`) plus an OpenAI-compatible API adapter (`openai`). 1.1 adds a reusable `ProviderSource` adapter for plugins, per-config plugin source identities, and Confluence page-tree scoping (`page_id`).
 
 ## Formats
 
@@ -87,7 +87,7 @@ set_resolver(...)` before `alvis run`.
 | type        | what it ingests                                              | config keys                                                                     |
 | ----------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------- |
 | `fs`        | text files under a directory                                 | `path`, `pattern`                                                               |
-| `confluence`| pages of a space (REST API)                                  | `url`, `space`, `username`, `api_token_env`                                     |
+| `confluence`| pages of a space, or one page and its descendants (REST API) | `url`, `space` **or** `page_id`, `username`, `api_token_env`                     |
 | `github`    | blobs of a repository tree (REST API)                        | `repo`, `branch`, `path`, `include_globs`, `exclude_globs`, `api_token_env`     |
 | `gitlab`    | blobs of a project repository, or every repo in a group (REST API; self-hosted OK) | `url`, `project`, `group`, `branch`, `path`, `include_globs`, `exclude_globs`, `project_include_globs`, `project_exclude_globs`, `include_archived`, `api_token_env` |
 | `s3`        | text objects in a bucket (SigV4, no boto3; MinIO-compatible) | `url`, `bucket`, `access_key_env`, `secret_key_env`, `region`, `prefix`, `include_globs`, `exclude_globs` |
@@ -97,6 +97,10 @@ set_resolver(...)` before `alvis run`.
 | `sharepoint`| files in a site's document library (Microsoft Graph, OAuth2)  | `tenant_id`, `client_id`, `site_url`, `client_secret_env`, `include_globs`, `exclude_globs` |
 | `gdrive`    | files a service account can see (Drive API v3, OAuth2)        | `service_account_key_env`, `folder_id`, `include_globs`, `exclude_globs` |
 | `none`      | no documents, ever — for query-only pipelines                 | (none)                                                                          |
+
+`confluence` accepts either `space` (whole space) or `page_id` (that page and
+every descendant, recursively — e.g. only the support documentation tree).
+When both are set, `page_id` scopes ingestion to its tree.
 
 Every source accepts `retries`, `retry_backoff`, and `verify`. Every remote
 source (`confluence`, `github`, `gitlab`, `s3`, `static_url`, `notion`,
@@ -262,7 +266,7 @@ CI builds and publishes `bzdvdn/alvis` (linux/amd64 + linux/arm64) for every
 and just pull:
 
 ```bash
-docker pull bzdvdn/alvis:v1.0.0rc3
+docker pull bzdvdn/alvis:v1.1.0rc1
 ```
 
 The image runs as an unprivileged `alvis` user in `/workspace`; incremental

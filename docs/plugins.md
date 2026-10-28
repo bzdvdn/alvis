@@ -47,13 +47,66 @@ Conventions and guarantees:
 | kind      | type                        | notes                                    |
 | --------- | --------------------------- | ---------------------------------------- |
 | source    | `fs`                        | local filesystem                         |
-| source    | `confluence`                | Confluence REST API (space)              |
+| source    | `confluence`                | Confluence REST API (space or page tree) |
 | source    | `github` / `gitlab`         | repository trees (blob sha fingerprint)  |
 | source    | `s3`                        | S3-compatible buckets (SigV4, no boto3)  |
 | extract   | `auto`                      | markdown / html / text / pdf / docx/xlsx |
 | chunk     | `auto` / `sections` / `size`| token, by-heading, fixed-size            |
 | embed     | `default` / `openai`        | deterministic local / OpenAI-compatible  |
 | index     | `memory` / `qdrant` / `pgvector` |                                      |
+
+## Simpler source plugins: document providers
+
+If your plugin only knows how to list documents (id, title, content, a few
+provenance fields), do not reimplement `Source`/`ListingSource` glue. Implement
+`DocumentProvider.documents()` and wrap it in `ProviderSource`:
+
+```python
+from alvis.sources import ProviderSource, SourceDocument
+
+class CatalogProvider:
+    name = "catalog"
+
+    async def documents(self) -> list[SourceDocument]:
+        return [
+            SourceDocument(
+                id="catalog://widget",
+                uri="https://catalog.example.com/widget",
+                title="Widget",
+                content="# Widget\n\n...",
+                content_type="text/markdown",
+                metadata={"owner": "sales"},
+            )
+        ]
+
+def _catalog(*, config, max_bytes=None):
+    return ProviderSource(CatalogProvider(), name="catalog", max_bytes=max_bytes)
+
+plugin = Plugin(
+    name="catalog",
+    version="0.1.0",
+    sources={"catalog": _catalog},
+    source_identities={"catalog": lambda config: str(config.config["path"])},
+)
+```
+
+`ProviderSource` handles content fingerprints, `DocumentMeta`/`Artifact`
+construction, `fetch(uris=...)` filtering, provider caching, duplicate-id
+detection, and fail-fast `SourceError` wrapping. It stamps `documentId`,
+`sourceUrl`, `title`, and `source` into chunk metadata (provider values win).
+It fingerprints by content, so every run reads every body; if your service can
+fingerprint cheaply (ETag, blob sha, page version), implement `ListingSource`
+directly instead.
+
+## Source identity (required for multi-instance plugins)
+
+Reconcile state is namespaced by `source_identity(config)`. Built-in types
+derive theirs from the config (`gitlab:group/x@host`, `confluence:page:123@...`).
+For plugin sources the default is just the type string, so **two pipelines
+using the same plugin type over different corpora would prune each other's
+points**. Any plugin type whose config selects a corpus should declare
+`source_identities` (see the example above). The core prefixes the returned
+value with `"<type>:"`.
 
 ## Community plugins
 
